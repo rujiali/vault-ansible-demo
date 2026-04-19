@@ -1,0 +1,36 @@
+# Break-glass OU
+dn: ou=BreakGlass,dc=corp,dc=example,dc=com
+objectClass: organizationalUnit
+ou: BreakGlass
+
+# Service Accounts OU (for Vault bind account)
+dn: ou=ServiceAccounts,dc=corp,dc=example,dc=com
+objectClass: organizationalUnit
+ou: ServiceAccounts
+
+# Vault service account (used by Vault to bind and rotate passwords)
+dn: cn=vault-svc,ou=ServiceAccounts,dc=corp,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: simpleSecurityObject
+cn: vault-svc
+sn: vault-svc
+uid: vault-svc
+userPassword: VaultServicePassword!
+
+# Break-glass account 1
+dn: cn=breakglass-win01,ou=BreakGlass,dc=corp,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: simpleSecurityObject
+cn: breakglass-win01
+sn: breakglass-win01
+uid: breakglass-win01
+userPassword: InitialBreakglass1!
+
+# Break-glass account 2
+dn: cn=breakglass-win02,ou=BreakGlass,dc=corp,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: simpleSecurityObject
+cn: breakglass-win02
+sn: breakglass-win02
+uid: breakglass-win02
+userPassword: InitialBreakglass2!

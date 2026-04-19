@@ -1,0 +1,43 @@
+---
+- name: SNMP Community String Rotation — Vault KV v2 + Ansible
+  hosts: rhel_targets
+  gather_facts: false
+
+  vars:
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('http://localhost:8200') }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+
+  tasks:
+    - name: Generate new community string
+      ansible.builtin.set_fact:
+        new_community: "corp-mon-{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=10') }}"
+      delegate_to: localhost
+
+    - name: Deploy new community string to RHEL config
+      ansible.builtin.copy:
+        content: |
+          # Managed by Vault + Ansible — do not edit manually
+          rocommunity {{ new_community }}
+          syslocation "Corp Data Centre"
+          syscontact  "secops@corp.example.com"
+        dest: /home/ansible/snmpd.conf
+        mode: '0644'
+      become: false
+
+    - name: Store new community string in Vault KV v2
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/secret/data/ansible/snmp"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          data:
+            community_string: "{{ new_community }}"
+        status_code: 200
+      delegate_to: localhost
+      no_log: true
+
+    - name: Confirm rotation
+      ansible.builtin.debug:
+        msg: "SNMP community string rotated and stored in Vault"

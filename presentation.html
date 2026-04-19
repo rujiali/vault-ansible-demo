@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vault Enterprise Operational Security Demo</title>
+  <style>
+    /* ─── Blueprint Tokens ────────────────────────────────────────── */
+    :root {
+      --bg:           #0b1623;
+      --bg-dark:      #070d17;
+      --bg-accent:    #0e1e38;
+      --bg-card:      rgba(14,30,56,0.9);
+      --bg-card-acc:  rgba(56,189,248,0.06);
+      --bg-mid:       #142444;
+      --bg-section:   #0a1f40;
+
+      --text-1:       #e2e8f0;
+      --text-2:       #94a3b8;
+      --text-muted:   #64748b;
+      --text-dim:     #475569;
+      --text-dimmer:  #2d3f55;
+
+      --accent:       #38bdf8;
+      --accent-dim:   rgba(56,189,248,0.10);
+      --accent-bd:    rgba(56,189,248,0.30);
+      --green:        #34d399;
+      --green-dim:    rgba(52,211,153,0.08);
+      --orange:       #fb923c;
+      --orange-dim:   rgba(251,146,60,0.08);
+      --red:          #f87171;
+      --yellow:       #fbbf24;
+      --purple:       #a78bfa;
+      --purple-dim:   rgba(167,139,250,0.08);
+
+      --border:       rgba(56,189,248,0.12);
+      --border-mid:   rgba(56,189,248,0.22);
+      --border-sub:   rgba(56,189,248,0.06);
+
+      --code-bg:      #050c18;
+      --code-bd:      #0e1e38;
+      --code-text:    #94a3b8;
+      --code-comment: #3d5a7a;
+      --code-string:  #34d399;
+      --code-keyword: #f87171;
+
+      --r-card: 10px;
+      --r-sm:   6px;
+      --r-md:   8px;
+      --r-badge:20px;
+    }
+
+    /* ─── Reset ───────────────────────────────────────────────────── */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-1);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Blueprint grid overlay */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(56,189,248,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56,189,248,0.035) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── Deck & Slide ────────────────────────────────────────────── */
+    .deck { width: 100%; height: 100vh; position: relative; z-index: 1; }
+
+    .slide {
+      display: none;
+      width: 100%; height: 100vh;
+      padding: 52px 72px;
+      flex-direction: column;
+      justify-content: center;
+      position: absolute;
+      top: 0; left: 0;
+      opacity: 0;
+    }
+
+    .slide.active {
+      display: flex;
+      animation: slideIn 0.32s cubic-bezier(0.22,0.61,0.36,1) forwards;
+    }
+
+    .slide.exit {
+      display: flex;
+      animation: slideOut 0.26s ease forwards;
+      pointer-events: none;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(18px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes slideOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(-18px); }
+    }
+
+    /* ─── Element animations ──────────────────────────────────────── */
+    [data-anim="fade-up"],
+    [data-anim="fade-in"] { opacity: 0; }
+
+    .slide.active [data-anim="fade-up"] { animation: fadeUp 0.4s cubic-bezier(0.22,0.61,0.36,1) forwards; }
+    .slide.active [data-anim="fade-in"] { animation: fadeIn 0.4s ease forwards; }
+    .slide.active [data-anim="stagger"] > * {
+      opacity: 0;
+      animation: fadeUp 0.36s cubic-bezier(0.22,0.61,0.36,1) forwards;
+    }
+    .slide.active [data-anim="stagger"] > *:nth-child(1) { animation-delay:.06s; }
+    .slide.active [data-anim="stagger"] > *:nth-child(2) { animation-delay:.12s; }
+    .slide.active [data-anim="stagger"] > *:nth-child(3) { animation-delay:.18s; }
+    .slide.active [data-anim="stagger"] > *:nth-child(4) { animation-delay:.24s; }
+    .slide.active [data-anim="stagger"] > *:nth-child(5) { animation-delay:.30s; }
+    .slide.active [data-anim="stagger"] > *:nth-child(6) { animation-delay:.36s; }
+
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(12px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    @keyframes fadeIn {
+      from { opacity:0; } to { opacity:1; }
+    }
+
+    /* ─── Slide themes ────────────────────────────────────────────── */
+    .slide-cover {
+      background: linear-gradient(135deg, #070d17 0%, #0b1e3d 55%, #0e2d5a 100%);
+      align-items: center;
+      text-align: center;
+    }
+    .slide-dark   { background: var(--bg-dark); }
+    .slide-accent { background: var(--bg-accent); }
+    .slide-section {
+      background: linear-gradient(135deg, #070d17 0%, #0a1f40 100%);
+      align-items: center;
+      text-align: center;
+      justify-content: center;
+    }
+
+    /* ─── Typography ──────────────────────────────────────────────── */
+    .eyebrow {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-num {
+      font-size: 5rem;
+      font-weight: 800;
+      color: rgba(56,189,248,0.12);
+      line-height: 1;
+      margin-bottom: 8px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .section-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 2.8rem;
+      font-weight: 700;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      background: linear-gradient(90deg, #e2e8f0, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    h2 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: var(--text-1);
+    }
+
+    .section-title {
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--text-1);
+      margin-bottom: 12px;
+    }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 680px;
+      line-height: 1.65;
+    }
+
+    p, li {
+      font-size: 0.95rem;
+      line-height: 1.7;
+      color: var(--text-2);
+    }
+
+    ul { list-style: none; padding: 0; }
+    ul li::before { content: '→'; color: var(--accent); margin-right: 8px; font-weight: bold; }
+    ul li { margin-bottom: 8px; }
+
+    code {
+      color: var(--accent);
+      font-family: 'JetBrains Mono','Courier New',monospace;
+      font-size: 0.85em;
+      background: var(--accent-dim);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ─── Layout ──────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 14px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-top: 14px; }
+
+    /* ─── Components ──────────────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-card);
+      padding: 20px;
+    }
+    .card-accent  { border-color: var(--accent);  background: var(--bg-card-acc); }
+    .card-green   { border-color: var(--green);   background: var(--green-dim); }
+    .card-orange  { border-color: var(--orange);  background: var(--orange-dim); }
+    .card-purple  { border-color: var(--purple);  background: var(--purple-dim); }
+    .card-red     { border-color: var(--red);     background: rgba(248,113,113,0.06); }
+
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--code-bd);
+      border-radius: var(--r-md);
+      padding: 16px 20px;
+      font-family: 'JetBrains Mono','Courier New',monospace;
+      font-size: 0.82rem;
+      color: var(--code-text);
+      line-height: 1.6;
+    }
+    .code-block .cm  { color: var(--code-comment); font-style: italic; }
+    .code-block .kw  { color: var(--code-keyword); }
+    .code-block .st  { color: var(--code-string); }
+    .code-block .hl  { color: var(--accent); }
+    .code-block .yl  { color: var(--yellow); }
+
+    .badge {
+      display: inline-block;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: var(--r-badge);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .badge-green  { background:var(--green-dim);  border-color:var(--green);  color:var(--green); }
+    .badge-orange { background:var(--orange-dim); border-color:var(--orange); color:var(--orange); }
+    .badge-purple { background:var(--purple-dim); border-color:var(--purple); color:var(--purple); }
+    .badge-red    { background:rgba(248,113,113,0.08); border-color:var(--red); color:var(--red); }
+
+    table { width:100%; border-collapse:collapse; font-size:0.85rem; margin-top:12px; }
+    th { text-align:left; padding:9px 12px; background:rgba(56,189,248,0.07); color:var(--accent); font-weight:600; border-bottom:1px solid var(--accent-bd); }
+    td { padding:9px 12px; border-bottom:1px solid var(--border-sub); color:var(--text-2); }
+    tr:last-child td { border-bottom:none; }
+
+    /* Flow boxes */
+    .flow-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .fbox {
+      background: var(--bg-card);
+      border: 1px solid var(--border-mid);
+      border-radius: var(--r-sm);
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      text-align: center;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+    .fbox.hi { border-color:var(--accent); background:var(--bg-card-acc); color:var(--accent); font-weight:600; }
+    .fbox.gr { border-color:var(--green);  background:var(--green-dim);   color:var(--green);  font-weight:600; }
+    .fbox.or { border-color:var(--orange); background:var(--orange-dim);  color:var(--orange); }
+    .fbox.pu { border-color:var(--purple); background:var(--purple-dim);  color:var(--purple); }
+    .fbox.rd { border-color:var(--red);    background:rgba(248,113,113,0.06); color:var(--red); }
+    .arr { color:var(--text-dimmer); font-size:1rem; flex-shrink:0; }
+    .arr.hi { color:var(--accent); }
+
+    /* Step list */
+    .step-list { display:flex; flex-direction:column; gap:8px; }
+    .step {
+      display:flex; align-items:flex-start; gap:10px;
+      background:var(--bg-mid); border:1px solid var(--border);
+      border-radius:var(--r-md); padding:9px 12px;
+    }
+    .step-num {
+      min-width:22px; height:22px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-size:0.74rem; font-weight:700; flex-shrink:0;
+      background:var(--accent); color:#070d17;
+    }
+    .step-num.gr { background:var(--green); }
+    .step-num.or { background:var(--orange); }
+    .step-num.pu { background:var(--purple); color:#fff; }
+    .step strong { color:var(--text-1); font-size:0.86rem; }
+    .step p { color:var(--text-muted); font-size:0.78rem; margin-top:2px; }
+
+    /* Divider */
+    .divider { width:48px; height:2px; background:var(--accent); margin-bottom:20px; opacity:0.6; }
+
+    /* Tag */
+    .tag {
+      display:inline-block; font-size:0.68rem; font-weight:700;
+      padding:2px 8px; border-radius:3px; letter-spacing:0.06em;
+      text-transform:uppercase; margin-right:4px;
+    }
+    .tag-rhel    { background:rgba(251,146,60,0.15); color:var(--orange); border:1px solid rgba(251,146,60,0.3); }
+    .tag-win     { background:rgba(56,189,248,0.1);  color:var(--accent); border:1px solid var(--accent-bd); }
+    .tag-vault   { background:rgba(52,211,153,0.1);  color:var(--green);  border:1px solid rgba(52,211,153,0.3); }
+    .tag-ansible { background:rgba(167,139,250,0.1); color:var(--purple); border:1px solid rgba(167,139,250,0.3); }
+    .tag-note    { background:rgba(248,113,113,0.1); color:var(--red);    border:1px solid rgba(248,113,113,0.3); }
+
+    /* ─── Animated arrows ─────────────────────────────────────────── */
+    @keyframes flowRight {
+      0%  { opacity:0; transform:translateX(-5px); }
+      50% { opacity:1; }
+      100%{ opacity:0; transform:translateX(5px); }
+    }
+    .arr-anim { display:flex; align-items:center; gap:2px; }
+    .arr-anim span {
+      display:block; width:7px; height:2px;
+      background:var(--accent); border-radius:1px;
+      animation:flowRight 1.2s ease-in-out infinite;
+    }
+    .arr-anim span:nth-child(1){animation-delay:0s;}
+    .arr-anim span:nth-child(2){animation-delay:.2s;}
+    .arr-anim span:nth-child(3){animation-delay:.4s;}
+    .arr-anim::after{ content:'▶'; color:var(--accent); font-size:0.8rem; }
+
+    /* ─── Chrome ──────────────────────────────────────────────────── */
+    .progress {
+      position:fixed; top:0; left:0;
+      height:2px; background:var(--accent);
+      transition:width 0.3s ease; z-index:100;
+      box-shadow: 0 0 10px rgba(56,189,248,0.5);
+    }
+
+    .nav {
+      position:fixed; bottom:24px; right:32px;
+      display:flex; align-items:center; gap:12px; z-index:100;
+    }
+    .nav button {
+      background:rgba(14,30,56,0.9); border:1px solid var(--border-mid);
+      color:var(--text-2); padding:7px 18px; border-radius:var(--r-sm);
+      cursor:pointer; font-size:0.82rem; transition:all 0.18s;
+    }
+    .nav button:hover { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); }
+    .slide-counter { font-size:0.76rem; color:var(--text-dimmer); font-variant-numeric:tabular-nums; }
+
+    .slide-num {
+      position:fixed; bottom:28px; left:32px;
+      font-size:0.7rem; color:var(--text-dimmer); z-index:100;
+      letter-spacing:0.08em; font-variant-numeric:tabular-nums;
+    }
+
+    .hint {
+      position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+      font-size:0.65rem; color:var(--text-dimmer); z-index:100; letter-spacing:0.06em;
+    }
+
+    /* Section pill on slides */
+    .section-pill {
+      display:inline-block; font-size:0.65rem; font-weight:700;
+      letter-spacing:0.12em; text-transform:uppercase;
+      background:var(--accent-dim); border:1px solid var(--accent-bd);
+      color:var(--accent); padding:3px 10px; border-radius:var(--r-badge);
+      margin-bottom:10px;
+    }
+
+    /* Notes */
+    .notes { display:none; }
+
+    /* ─── Speaker Notes ───────────────────────────────────────────── */
+    #notes-overlay { display:none; position:fixed; inset:0; background:rgba(7,13,23,0.9); z-index:200; align-items:flex-end; }
+    #notes-overlay.open { display:flex; }
+    #notes-panel { background:#0e1e38; border-top:2px solid var(--accent); padding:22px 44px; width:100%; max-height:38vh; overflow-y:auto; }
+    #notes-panel h4 { color:var(--accent); font-size:0.7rem; letter-spacing:0.15em; text-transform:uppercase; margin-bottom:8px; }
+    #notes-panel p { color:var(--text-2); font-size:0.92rem; line-height:1.7; }
+
+    /* ─── Overview ────────────────────────────────────────────────── */
+    #overview { display:none; position:fixed; inset:0; background:#04080f; z-index:200; overflow-y:auto; padding:40px; }
+    #overview.open { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; align-content:start; }
+    .ov-thumb { background:var(--bg-accent); border:2px solid var(--border); border-radius:8px; aspect-ratio:16/9; cursor:pointer; transition:border-color 0.18s; position:relative; overflow:hidden; }
+    .ov-thumb:hover, .ov-thumb.active { border-color:var(--accent); box-shadow:0 0 14px var(--accent-dim); }
+    .ov-label { position:absolute; bottom:5px; left:7px; font-size:0.6rem; color:var(--text-dim); letter-spacing:.04em; }
+    .ov-title { position:absolute; bottom:5px; right:7px; font-size:0.58rem; color:var(--text-dimmer); max-width:65%; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  </style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="slide-num" id="slide-num">01 / 20</div>
+<div class="hint">← → navigate &nbsp;·&nbsp; S notes &nbsp;·&nbsp; O overview &nbsp;·&nbsp; F fullscreen</div>
+
+<div class="deck" id="deck">
+
+  <!-- ① Cover -->
+  <div class="slide slide-cover">
+    <div class="eyebrow" data-anim="fade-up">HashiCorp Vault Enterprise</div>
+    <h1 data-anim="fade-up" style="animation-delay:.08s">Operational Security Demo</h1>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.16s">
+      Ansible Automation &nbsp;·&nbsp; Break-Glass Access &nbsp;·&nbsp; Disaster Recovery<br>
+      Local Cluster Operations &nbsp;·&nbsp; Operational Best Practices
+    </p>
+    <div class="notes"><p>Opening slide. Audience: Security Architect Design Authority. This demo covers 5 areas: Ansible automation for batch credential rotation, break-glass access workflow, DR operations, local cluster behaviour, and operational best practices.</p></div>
+  </div>
+
+  <!-- ② Agenda -->
+  <div class="slide slide-dark">
+    <div class="eyebrow" data-anim="fade-up">Agenda</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">What We Will Cover</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px" data-anim="stagger">
+      <div class="card card-accent">
+        <div class="badge">Section 1</div>
+        <h3>Ansible-Based Automation</h3>
+        <p>Batch rotation of SSH keys, SNMP credentials, and break-glass accounts across RHEL and Windows at scale. API and integration points.</p>
+      </div>
+      <div class="card">
+        <div class="badge badge-green">Section 2</div>
+        <h3>Break-Glass Access Workflow</h3>
+        <p>End-to-end privileged access request, multi-authorisation, audit trail, offline access, and post-use rotation.</p>
+      </div>
+      <div class="card">
+        <div class="badge badge-orange">Section 3</div>
+        <h3>Disaster Recovery</h3>
+        <p>Activating DR, promoting a DR instance to primary, and re-pointing local clusters to the new primary.</p>
+      </div>
+      <div class="card">
+        <div class="badge badge-purple">Section 4</div>
+        <h3>Local Clusters & Autonomous Operation</h3>
+        <p>Secret management during autonomous mode, conflict detection and resolution, propagation model.</p>
+      </div>
+      <div class="card" style="grid-column:1/-1">
+        <div class="badge" style="background:rgba(251,191,36,0.1);border-color:var(--yellow);color:var(--yellow)">Section 5</div>
+        <h3 style="color:var(--yellow)">Operational Best Practices</h3>
+        <p>Vault unseal procedures, backup and restore operations.</p>
+      </div>
+    </div>
+    <div class="notes"><p>Walk through the agenda. Emphasise that sections 1 and 2 are directly related — Ansible handles the automated rotation, while section 2 covers the human-in-the-loop break-glass workflow.</p></div>
+  </div>
+
+  <!-- ③ Section 1 break -->
+  <div class="slide slide-section">
+    <div class="section-num" data-anim="fade-in">01</div>
+    <div class="section-label" data-anim="fade-up" style="animation-delay:.08s">Section One</div>
+    <div class="section-title" data-anim="fade-up" style="animation-delay:.14s">Ansible-Based Automation</div>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.2s">Batch rotation of SSH keys, SNMP credentials, and break-glass accounts at scale</p>
+    <div class="notes"><p>Transition slide. Section 1 covers automated, scheduled credential rotation managed through Ansible playbooks backed by Vault as the source of truth.</p></div>
+  </div>
+
+  <!-- ④ Ansible Architecture -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 1 — Ansible Automation</div>
+    <div class="eyebrow" data-anim="fade-up">Architecture</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">AAP + Vault + Target Systems</h2>
+
+    <div style="display:flex;flex-direction:column;gap:20px;margin-top:8px" data-anim="fade-in" style="animation-delay:.12s">
+
+      <!-- Top: flow -->
+      <div class="flow-row" style="justify-content:center;gap:10px;align-items:center">
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
+          <div class="fbox hi" style="text-align:center">🏗️ AAP<br><small style="font-size:0.72rem;color:var(--text-muted)">Ansible Automation Platform</small></div>
+          <div style="font-size:0.7rem;color:var(--text-muted)">Job Templates · Scheduling · RBAC</div>
+        </div>
+        <div class="arr-anim"><span></span><span></span><span></span></div>
+        <div class="fbox hi" style="text-align:center">🏛️ Vault<br><small style="font-size:0.72rem;color:var(--text-muted)">Credential Plugin</small></div>
+        <div class="arr-anim"><span></span><span></span><span></span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <div class="fbox or"><span class="tag tag-rhel">RHEL</span> SSH Hosts</div>
+          <div class="fbox hi"><span class="tag tag-win">WIN</span> Windows Servers</div>
+          <div class="fbox" style="border-color:var(--yellow);color:var(--yellow)">📡 SNMP Devices</div>
+        </div>
+      </div>
+
+      <!-- AAP integration note -->
+      <div style="background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:var(--r-sm);padding:10px 16px;font-size:0.82rem;color:var(--text-2);display:flex;justify-content:space-between;align-items:center;gap:24px">
+        <span>AAP authenticates to Vault via <strong style="color:var(--accent)">OIDC</strong> and fetches credentials at job runtime via the <strong style="color:var(--accent)">HashiCorp Vault Credential Plugin</strong> — playbooks never handle secrets directly.</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap">Lab uses AppRole</span>
+      </div>
+
+      <!-- Bottom: rotation model comparison -->
+      <div class="grid-2" style="gap:12px">
+
+        <!-- AAP-orchestrated -->
+        <div class="card" style="border-color:var(--accent)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span class="tag tag-ansible">AAP Rotates</span>
+            <h3>Ansible-Orchestrated</h3>
+          </div>
+          <p style="font-size:0.83rem;color:var(--text-2);margin-bottom:10px">AAP generates/rotates the credential, pushes it to the target, then writes back to Vault. Vault is the <strong style="color:var(--text-1)">store</strong>. AAP availability required for rotation.</p>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:0.82rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--bg-mid);border-radius:var(--r-sm)">
+              <div>
+                <span style="color:var(--text-1)">RHEL SSH key pairs</span>
+                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Access keys for RHEL hosts</span>
+              </div>
+              <span class="tag tag-vault" style="font-size:0.72rem">Vault KV v2</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--bg-mid);border-radius:var(--r-sm)">
+              <div>
+                <span style="color:var(--text-1)">SNMP community strings</span>
+                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Network device credentials</span>
+              </div>
+              <span class="tag tag-vault" style="font-size:0.72rem">Vault KV v2</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Vault-native -->
+        <div class="card card-green">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span class="tag tag-vault">Vault Rotates</span>
+            <h3 style="color:var(--green)">Vault-Native</h3>
+          </div>
+          <p style="font-size:0.83rem;color:var(--text-2);margin-bottom:10px">Vault connects directly to the target and rotates the credential. AAP not involved. Rotation happens even if AAP is unavailable.</p>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:0.82rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--bg-mid);border-radius:var(--r-sm)">
+              <div>
+                <span style="color:var(--text-1)">RHEL local account passwords</span>
+                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Break-glass accounts on RHEL</span>
+              </div>
+              <span class="tag tag-rhel" style="font-size:0.72rem">OS Secrets Engine</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--bg-mid);border-radius:var(--r-sm)">
+              <div>
+                <span style="color:var(--text-1)">Windows AD account passwords</span>
+                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Break-glass AD accounts — library checkout</span>
+              </div>
+              <span class="tag tag-win" style="font-size:0.72rem">AD Secrets Engine</span>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:0.78rem;color:var(--green)">
+            Both RHEL and Windows break-glass are Vault-native — no AAP dependency for rotation.
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="notes"><p>Key distinction for the Security Architect audience: break-glass rotation for both RHEL and Windows is Vault-native — OS Secrets Engine (RHEL via SSH) and AD Secrets Engine (Windows via LDAP). Neither requires AAP. SSH keys and SNMP are Ansible-orchestrated — AAP is the rotation engine, Vault is the store. All patterns use Vault as the single source of truth.</p></div>
+  </div>
+
+  <!-- ⑤ SSH Key Rotation -->
+  <div class="slide slide-accent">
+    <div class="section-pill">Section 1 — Ansible Automation</div>
+    <div class="eyebrow" data-anim="fade-up">SSH Key Rotation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">Vault KV — SSH Key Pair Rotation at Scale</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>AAP job triggered on schedule or on-demand</strong><p>Job template runs the SSH key rotation playbook across all target hosts in the inventory group.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Ansible generates a new ed25519 key pair per host</strong><p>New private/public key pair generated in memory. Never written to disk on the AAP node.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div><strong>New public key deployed to target host</strong><p>Ansible pushes the new public key to <code>~/.ssh/authorized_keys</code> and removes the old entry atomically.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>New private key written to Vault KV</strong><p><code>POST /v1/kv/data/ssh/&lt;host&gt;</code> — only after host confirms new key works. Vault KV v2 retains full version history.</p></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-accent">
+          <h3>Key API Endpoints</h3>
+          <div class="code-block" style="margin-top:8px;font-size:0.78rem">
+            <span class="cm"># Store new private key</span><br>
+            <span class="hl">POST /v1/kv/data/ssh/&lt;host&gt;</span><br>
+            &nbsp;&nbsp;private_key: &lt;pem&gt;<br>
+            &nbsp;&nbsp;public_key: &lt;pub&gt;<br>
+            &nbsp;&nbsp;rotated_at: &lt;ts&gt;<br><br>
+            <span class="cm"># Read current key</span><br>
+            <span class="hl">GET  /v1/kv/data/ssh/&lt;host&gt;</span><br><br>
+            <span class="cm"># View rotation history</span><br>
+            <span class="hl">GET  /v1/kv/metadata/ssh/&lt;host&gt;</span>
+          </div>
+        </div>
+        <div class="card card-green">
+          <h3 style="color:var(--green)">Why Vault KV for SSH Keys</h3>
+          <ul style="margin-top:4px">
+            <li>Single source of truth for all host keys</li>
+            <li>Full version history — roll back if needed</li>
+            <li>AAP fetches key at job runtime via credential plugin</li>
+            <li>No static keys on AAP node or in playbooks</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>The client uses SSH public/private key pairs, not CA-signed certificates. Vault KV v2 stores the private key as the source of truth. The rotation pattern is: generate new pair → deploy public key to host → confirm access works → write private key to Vault. Write-after-confirm prevents locking yourself out.</p></div>
+  </div>
+
+  <!-- ⑥ SNMP Credentials -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 1 — Ansible Automation</div>
+    <div class="eyebrow" data-anim="fade-up">SNMP Credential Rotation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">KV-Backed Rotation via Ansible</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div style="display:flex;flex-direction:column;gap:10px" data-anim="stagger">
+        <div class="step-list">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>Ansible reads current SNMP creds from Vault KV</strong><p><code>GET /v1/kv/data/network/snmp/&lt;device&gt;</code></p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Ansible generates new credential</strong><p>New community string or SNMPv3 auth/priv passwords generated in the playbook.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div><strong>New credential pushed to device</strong><p>Ansible configures the network device via SNMP management API or CLI.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>New credential written back to Vault KV</strong><p><code>POST /v1/kv/data/network/snmp/&lt;device&gt;</code> — KV v2 retains version history.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-accent">
+          <h3>Key API Endpoints</h3>
+          <div class="code-block" style="margin-top:8px;font-size:0.78rem">
+            <span class="cm"># Read current credential</span><br>
+            <span class="hl">GET  /v1/kv/data/network/snmp/&lt;dev&gt;</span><br><br>
+            <span class="cm"># Write new credential (KV v2)</span><br>
+            <span class="hl">POST /v1/kv/data/network/snmp/&lt;dev&gt;</span><br>
+            &nbsp;&nbsp;data: { community: &lt;new_val&gt; }<br><br>
+            <span class="cm"># Read version history</span><br>
+            <span class="hl">GET  /v1/kv/metadata/network/snmp/&lt;dev&gt;</span>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Ansible Module</h3>
+          <div class="code-block" style="margin-top:8px;font-size:0.78rem">
+            <span class="cm"># community.hashi_vault</span><br>
+            - <span class="yl">vault_kv2_write</span>:<br>
+            &nbsp;&nbsp;engine_mount_point: kv<br>
+            &nbsp;&nbsp;path: network/snmp/core-sw-01<br>
+            &nbsp;&nbsp;data:<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;community: <span class="st">"{{ new_cred }}"</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>The write-after-deploy order is critical — write to the device first, then confirm success, then write to Vault. If the device update fails, Vault still holds the old credential. Never write to Vault before confirming the device accepted the change.</p></div>
+  </div>
+
+  <!-- ⑦ Break-Glass Rotation -->
+  <div class="slide slide-accent">
+    <div class="section-pill">Section 1 — Ansible Automation</div>
+    <div class="eyebrow" data-anim="fade-up">Break-Glass Credential Rotation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">RHEL vs Windows — Break-Glass Rotation</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+
+      <!-- RHEL -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="tag tag-rhel" style="font-size:0.72rem;padding:3px 10px">RHEL</span>
+          <span style="color:var(--text-muted);font-size:0.85rem">OS Secrets Engine (Native)</span>
+        </div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num or">1</div>
+            <div><strong>OS Secrets Engine manages accounts natively</strong><p>Vault connects to RHEL hosts via SSH using a management account.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num or">2</div>
+            <div><strong>Scheduled rotation via rotation_schedule</strong><p><code>rotation_schedule="0 0 1 * *"</code> — monthly rotation configured per account.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num or">3</div>
+            <div><strong>Ansible triggers ad-hoc rotation</strong><p><code>POST /v1/os/hosts/&lt;host&gt;/accounts/&lt;acct&gt;/rotate</code></p></div>
+          </div>
+          <div class="step">
+            <div class="step-num or">4</div>
+            <div><strong>Version history retained in Vault</strong><p>Previous credentials recoverable. Full audit trail of every rotation.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Windows -->
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="tag tag-win" style="font-size:0.72rem;padding:3px 10px">Windows</span>
+          <span style="color:var(--text-muted);font-size:0.85rem">AD Secrets Engine (Native)</span>
+        </div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>AD Secrets Engine connects to Active Directory via LDAP</strong><p>Vault binds to AD using a service account. No agent or WinRM required.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Break-glass account checked out from library</strong><p><code>POST /v1/openldap/library/&lt;set&gt;/check-out</code> — Vault issues a time-limited lease. Account locked to this checkout until check-in.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div><strong>Scheduled rotation via ttl</strong><p>Vault rotates the AD account password on a configured schedule. No manual intervention required.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>Check-in triggers immediate rotation</strong><p><code>POST /v1/openldap/library/&lt;set&gt;/check-in</code> — password rotated immediately after session ends. Account available for next checkout.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>Both RHEL and Windows break-glass are now Vault-native. RHEL uses the OS Secrets Engine (connects via SSH). Windows uses the AD Secrets Engine (connects via LDAP). Neither requires AAP for rotation — Vault owns the full lifecycle for both. The library checkout pattern is ideal for break-glass: account is reserved for the duration of the session and auto-rotated on check-in.</p></div>
+  </div>
+
+  <!-- ⑧ API Integration Points -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 1 — Ansible Automation</div>
+    <div class="eyebrow" data-anim="fade-up">Integration Points</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">APIs Ansible Uses with Vault</h2>
+
+    <table data-anim="fade-in" style="animation-delay:.12s">
+      <tr>
+        <th style="width:22%">Use Case</th>
+        <th style="width:28%">Vault API Endpoint</th>
+        <th style="width:20%">Ansible Module</th>
+        <th>Notes</th>
+      </tr>
+      <tr>
+        <td><span class="tag tag-rhel">RHEL</span> SSH signing</td>
+        <td><code>POST /v1/ssh/sign/&lt;role&gt;</code></td>
+        <td><code>vault_write</code></td>
+        <td>Returns signed certificate with TTL</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-rhel">RHEL</span> Break-glass rotate</td>
+        <td><code>POST /v1/os/hosts/&lt;h&gt;/accounts/&lt;a&gt;/rotate</code></td>
+        <td><code>vault_write</code></td>
+        <td>OS secrets engine — Vault rotates directly</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-rhel">RHEL</span> Read credential</td>
+        <td><code>GET /v1/os/hosts/&lt;h&gt;/accounts/&lt;a&gt;/creds</code></td>
+        <td><code>vault_read</code></td>
+        <td>Returns current password after rotation</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-win">WIN</span> Check out account</td>
+        <td><code>POST /v1/openldap/library/&lt;set&gt;/check-out</code></td>
+        <td><code>vault_write</code></td>
+        <td>Returns AD credential for break-glass session</td>
+      </tr>
+      <tr>
+        <td><span class="tag tag-win">WIN</span> Check in account</td>
+        <td><code>POST /v1/openldap/library/&lt;set&gt;/check-in</code></td>
+        <td><code>vault_write</code></td>
+        <td>Vault rotates AD password immediately via LDAP</td>
+      </tr>
+      <tr>
+        <td>📡 SNMP read/write</td>
+        <td><code>GET|POST /v1/kv/data/network/snmp/&lt;device&gt;</code></td>
+        <td><code>vault_kv2_get/write</code></td>
+        <td>KV v2 retains version history</td>
+      </tr>
+      <tr>
+        <td>🔐 Auth (AppRole)</td>
+        <td><code>POST /v1/auth/approle/login</code></td>
+        <td><code>vault_login</code></td>
+        <td>Ansible authenticates as AppRole — no static token</td>
+      </tr>
+    </table>
+
+    <div style="margin-top:14px;padding:10px 14px;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--accent-dim);font-size:0.8rem;color:var(--accent)" data-anim="fade-up" style="animation-delay:.3s">
+      All Ansible → Vault calls use AppRole authentication. The Role ID is stored in the playbook; the Secret ID is injected at runtime from a secure store — no static tokens in source control.
+    </div>
+    <div class="notes"><p>AppRole is the right auth method for machine-to-machine (Ansible → Vault). Response-wrapping the Secret ID at delivery time gives you a one-time-use token that limits exposure if intercepted.</p></div>
+  </div>
+
+  <!-- ⑨ Section 2 break -->
+  <div class="slide slide-section">
+    <div class="section-num" data-anim="fade-in">02</div>
+    <div class="section-label" data-anim="fade-up" style="animation-delay:.08s">Section Two</div>
+    <div class="section-title" data-anim="fade-up" style="animation-delay:.14s">Break-Glass Access Workflow</div>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.2s">End-to-end privileged access — request, authorise, audit, rotate</p>
+    <div class="notes"><p>Transition to section 2. This covers the human workflow — how a user requests access to a break-glass account, how it gets approved, and what happens afterwards.</p></div>
+  </div>
+
+  <!-- ⑩ Break-Glass Workflow -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 2 — Break-Glass</div>
+    <div class="eyebrow" data-anim="fade-up">User Workflow</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">End-to-End Break-Glass Access</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div class="step-list" data-anim="stagger">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div><strong>User requests access to privileged account</strong><p>Calls <code>GET /v1/kv/data/breakglass/&lt;host&gt;</code> or <code>GET /v1/os/hosts/&lt;h&gt;/accounts/&lt;a&gt;/creds</code>. Vault does not return the credential — returns a <strong style="color:var(--text-1)">wrapping token</strong>.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div><strong>Control Group holds the request</strong><p>Wrapping token sent out-of-band to approver(s). TTL clock starts (e.g. 1 hour).</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num pu">3</div>
+          <div><strong>Approver(s) authorise via Vault</strong><p><code>POST /v1/sys/control-group/authorize</code> with the accessor. If <code>min_approvals=2</code>, two separate approvers required. Approver identity recorded in audit log.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num gr">4</div>
+          <div><strong>User unwraps and accesses credential</strong><p><code>vault unwrap &lt;wrapping_token&gt;</code> — only succeeds after all required approvals. Credential is one-time readable.</p></div>
+        </div>
+        <div class="step">
+          <div class="step-num or">5</div>
+          <div><strong>Credential rotated immediately after use</strong><p>Session ends → rotation triggered. RHEL: Vault OS Engine rotates via SSH. Windows: Vault AD Engine rotates via LDAP on check-in. Old password invalidated. <em style="color:var(--text-muted)">See next slide.</em></p></div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-accent">
+          <h3>What is Audited</h3>
+          <ul style="margin-top:6px">
+            <li>Who requested access — identity + timestamp</li>
+            <li>Who approved — each approver's identity</li>
+            <li>When the token was unwrapped</li>
+            <li>When the credential was rotated post-use</li>
+          </ul>
+        </div>
+        <div class="card card-purple">
+          <h3 style="color:var(--purple)">Multi-Authorisation Config</h3>
+          <div class="code-block" style="margin-top:8px;font-size:0.76rem">
+            control_group = {<br>
+            &nbsp;&nbsp;ttl = "1h"<br>
+            &nbsp;&nbsp;factor "dual-approval" {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;identity {<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;group_names = ["security-team"]<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;approvals   = 2<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+            &nbsp;&nbsp;}<br>
+            }
+          </div>
+        </div>
+        <div class="card card-green">
+          <h3 style="color:var(--green)">Applies to Both RHEL & Windows</h3>
+          <p style="font-size:0.85rem">Control Group is a Vault policy feature — applies regardless of OS. The credential path changes, the approval flow is identical.</p>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>The wrapping token is the key mechanism — the requestor never sees the credential until approval is granted. The TTL means if the approver doesn't act within the window, the request expires and must be re-raised. This is a hard control, not a soft workflow.</p></div>
+  </div>
+
+  <!-- ⑪ Post-Use Credential Rotation -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 2 — Break-Glass</div>
+    <div class="eyebrow" data-anim="fade-up">Post-Use Rotation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">How the Credential is Rotated After Use</h2>
+
+    <div class="grid-2" style="margin-top:12px">
+
+      <!-- RHEL -->
+      <div class="card card-orange" data-anim="fade-up" style="animation-delay:.1s">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="tag tag-rhel">RHEL</span>
+          <h3 style="color:var(--orange)">OS Secrets Engine — Vault-Native</h3>
+        </div>
+        <div class="step-list">
+          <div class="step">
+            <div class="step-num" style="background:var(--orange-dim);color:var(--orange);border-color:var(--orange)">1</div>
+            <div><strong>Session ends</strong><p>Requestor notifies security team or AAP job is triggered on session close.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:var(--orange-dim);color:var(--orange);border-color:var(--orange)">2</div>
+            <div><strong>Vault rotates directly on RHEL host</strong><p><code>vault write -f os/hosts/&lt;h&gt;/accounts/breakglass-rhel/rotate</code> — Vault connects to the host via SSH and changes the password. No human sets the new value.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:var(--orange-dim);color:var(--orange);border-color:var(--orange)">3</div>
+            <div><strong>Old password invalidated immediately</strong><p>Any attempt to use the prior credential fails at the OS level. New credential is stored only in Vault.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Windows -->
+      <div class="card card-green" data-anim="fade-up" style="animation-delay:.16s">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span class="tag tag-win">WIN</span>
+          <h3 style="color:var(--green)">AD Secrets Engine — Vault-Native</h3>
+        </div>
+        <div class="step-list">
+          <div class="step">
+            <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">1</div>
+            <div><strong>Session ends</strong><p>Requestor checks the AD account back in via Vault.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">2</div>
+            <div><strong>Vault rotates the AD account password directly</strong><p><code>vault write -f openldap/library/&lt;set&gt;/check-in</code> — Vault connects to AD via LDAP and rotates the password. No AAP, no WinRM.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">3</div>
+            <div><strong>Old password invalidated immediately</strong><p>AD enforces the new password. Account available for next break-glass checkout.</p></div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding:8px 12px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--r-sm);font-size:0.8rem;color:var(--green)">
+          Vault-native — same model as RHEL. No AAP dependency for rotation.
+        </div>
+      </div>
+
+    </div>
+    <div class="notes"><p>Both RHEL and Windows break-glass are now Vault-native. RHEL: OS Secrets Engine rotates via SSH. Windows: AD Secrets Engine rotates via LDAP. Neither requires AAP. The library checkout model is the right pattern for break-glass — account is reserved for the session and auto-rotated on check-in, closing the audit trail cleanly.</p></div>
+  </div>
+
+  <!-- ⑫ Vault Unavailable -->
+  <div class="slide slide-accent">
+    <div class="section-pill">Section 2 — Break-Glass</div>
+    <div class="eyebrow" data-anim="fade-up">Offline Access</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">Break-Glass When Vault is Unavailable</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div style="display:flex;flex-direction:column;gap:12px" data-anim="stagger">
+        <div class="card card-red">
+          <div class="badge badge-red">Risk</div>
+          <h3 style="color:var(--red)">Vault Unavailable = No Dynamic Access</h3>
+          <p>If Vault is sealed, unreachable, or in DR failover, the standard Control Group workflow cannot complete. This is a deliberate security boundary.</p>
+        </div>
+        <div class="card card-orange">
+          <div class="badge badge-orange">Mitigation</div>
+          <h3 style="color:var(--orange)">Emergency Static Credentials</h3>
+          <p>A small set of static break-glass credentials are stored <strong style="color:var(--text-1)">outside Vault</strong> — in a physically secured location (e.g. sealed envelope, privileged access workstation, or offline secrets manager) — for genuine Vault-down scenarios.</p>
+        </div>
+        <div class="card card-accent">
+          <div class="badge">Recovery Procedure</div>
+          <h3>After Vault Restores</h3>
+          <p>Any static credential used during the outage <strong style="color:var(--accent)">must be rotated immediately</strong> once Vault is available. Usage of offline credentials must be logged manually and reviewed in the post-incident process.</p>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <h3>Recommended Offline Credential Pattern</h3>
+          <div class="step-list" style="margin-top:8px">
+            <div class="step">
+              <div class="step-num">1</div>
+              <div><strong>Generate static emergency creds</strong><p>Created during provisioning, stored in sealed physical custody.</p></div>
+            </div>
+            <div class="step">
+              <div class="step-num">2</div>
+              <div><strong>Dual-custody physical access</strong><p>Two people required to access the physical store — mirrors the Control Group principle offline.</p></div>
+            </div>
+            <div class="step">
+              <div class="step-num">3</div>
+              <div><strong>Vault-down declared by incident process</strong><p>Offline access only authorised after formal Vault-unavailable declaration.</p></div>
+            </div>
+            <div class="step">
+              <div class="step-num or">4</div>
+              <div><strong>Rotate and audit on Vault restoration</strong><p>Offline creds rotated in Vault immediately. Access logged in incident record.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>This is a governance and process question as much as a technical one. The Design Authority should confirm: who holds physical custody of offline creds, what declares a "Vault unavailable" event, and what the post-incident rotation SLA is.</p></div>
+  </div>
+
+  <!-- ⑫ Section 3 break -->
+  <div class="slide slide-section">
+    <div class="section-num" data-anim="fade-in">03</div>
+    <div class="section-label" data-anim="fade-up" style="animation-delay:.08s">Section Three</div>
+    <div class="section-title" data-anim="fade-up" style="animation-delay:.14s">Disaster Recovery Operations</div>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.2s">Activating DR, promoting to primary, re-pointing clusters</p>
+    <div class="notes"><p>Transition to DR section. Topology: Primary + 1 DR cluster + Performance Replication clusters.</p></div>
+  </div>
+
+  <!-- ⑬ DR Topology & Activation -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 3 — Disaster Recovery</div>
+    <div class="eyebrow" data-anim="fade-up">Topology & Activation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">Primary + DR + Performance Replication</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div>
+        <!-- Topology diagram -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px;background:var(--bg-mid);border:1px solid var(--border);border-radius:var(--r-card)" data-anim="fade-in" style="animation-delay:.12s">
+          <div class="fbox hi" style="width:180px">🏛️ Primary Cluster<br><small style="font-size:0.72rem;color:var(--text-muted)">Read + Write</small></div>
+          <div style="display:flex;gap:32px;align-items:flex-start">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+              <div style="color:var(--text-dimmer);font-size:0.7rem;letter-spacing:.06em">DR REPLICATION</div>
+              <div style="width:1px;height:20px;background:var(--red);opacity:0.5"></div>
+              <div class="fbox rd" style="width:160px">🔴 DR Cluster<br><small style="font-size:0.72rem">Standby — no reads</small></div>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+              <div style="color:var(--text-dimmer);font-size:0.7rem;letter-spacing:.06em">PERF REPLICATION</div>
+              <div style="width:1px;height:20px;background:var(--green);opacity:0.5"></div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <div class="fbox gr" style="width:160px">🟢 PR Cluster A<br><small style="font-size:0.72rem">Local reads</small></div>
+                <div class="fbox gr" style="width:160px">🟢 PR Cluster B<br><small style="font-size:0.72rem">Local reads</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px" data-anim="stagger">
+          <div class="card" style="margin-bottom:8px">
+            <h3>DR Replication</h3>
+            <p style="font-size:0.85rem">Full data replication to DR cluster. DR cluster is <strong style="color:var(--text-1)">passive</strong> — cannot serve requests until promoted. Intended for full cluster failure.</p>
+          </div>
+          <div class="card card-green">
+            <h3 style="color:var(--green)">Performance Replication</h3>
+            <p style="font-size:0.85rem">PR clusters can serve local read requests. Writes are forwarded to primary. Intended for latency and locality, not full DR.</p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="color:var(--accent);font-size:0.78rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">DR Activation Steps</div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num rd" style="background:var(--red)">1</div>
+            <div><strong>Declare primary failure</strong><p>Confirm primary is unrecoverable. Do not promote DR prematurely — split-brain risk.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Generate DR operation token on primary</strong><p><code>vault operator generate-root -dr-token</code> — or use existing DR secondary token if primary is unreachable.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div><strong>Promote DR cluster to primary</strong><p><code>vault operator raft promote-dr</code> on the DR cluster using the DR operation token. DR cluster becomes the new primary.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div><strong>Update DNS / load balancer</strong><p>Point the Vault service endpoint to the new primary. <strong style="color:var(--text-1)">This is not automatic</strong> — requires manual DNS or LB change.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">5</div>
+            <div><strong>Re-point PR clusters</strong><p>PR clusters must be updated to replicate from the new primary. See next slide.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>Key point for Design Authority: the DR promotion is a manual, deliberate operation — Vault does not auto-promote. This is by design to prevent split-brain. The DNS/LB cutover is also manual and should be in the runbook.</p></div>
+  </div>
+
+  <!-- ⑭ Cluster Re-pointing -->
+  <div class="slide slide-accent">
+    <div class="section-pill">Section 3 — Disaster Recovery</div>
+    <div class="eyebrow" data-anim="fade-up">Cluster Re-pointing</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">Redirecting PR Clusters to the New Primary</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div>
+        <div class="card card-red" style="margin-bottom:12px" data-anim="fade-up" style="animation-delay:.1s">
+          <div class="badge badge-red">Important</div>
+          <h3 style="color:var(--red)">Not Automatic</h3>
+          <p>Performance Replication clusters do <strong style="color:var(--text-1)">not</strong> automatically re-point to the new primary after a DR failover. This is a manual step.</p>
+        </div>
+
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>PR cluster detects primary is unreachable</strong><p>PR cluster enters degraded mode — local reads continue, writes fail (no primary to forward to).</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Demote and re-enable replication on PR cluster</strong><p><code>vault write -f sys/replication/performance/secondary/disable</code></p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">3</div>
+            <div><strong>Generate new secondary activation token on new primary</strong><p><code>vault write sys/replication/performance/primary/secondary-token id=&lt;cluster&gt;</code></p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>PR cluster activates against new primary</strong><p><code>vault write sys/replication/performance/secondary/enable token=&lt;token&gt; primary_api_addr=&lt;new-primary&gt;</code></p></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card card-accent">
+          <h3>During Failover Window</h3>
+          <ul style="margin-top:6px">
+            <li>PR cluster reads: <strong style="color:var(--green)">continue</strong> (cached locally)</li>
+            <li>PR cluster writes: <strong style="color:var(--red)">fail</strong> (no primary to forward to)</li>
+            <li>New secret creation: <strong style="color:var(--red)">unavailable</strong></li>
+            <li>Existing secret reads: <strong style="color:var(--green)">available</strong></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Automation Recommendation</h3>
+          <p style="font-size:0.85rem">The re-pointing steps can be scripted and triggered as part of the DR runbook. Vault does not orchestrate this automatically — the runbook should include the re-point commands as a mandatory post-promotion step.</p>
+        </div>
+        <div class="card card-green">
+          <h3 style="color:var(--green)">Recovery Time Considerations</h3>
+          <ul style="margin-top:4px;font-size:0.88rem">
+            <li>DNS/LB cutover: minutes (manual)</li>
+            <li>PR re-point: minutes per cluster (scripted)</li>
+            <li>Full replication sync: depends on data volume</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>The "not automatic" point is the most important takeaway for the Design Authority. They need to include PR re-pointing in the DR runbook and test it during DR drills. Clients often assume this is automatic.</p></div>
+  </div>
+
+  <!-- ⑮ Section 4 break -->
+  <div class="slide slide-section">
+    <div class="section-num" data-anim="fade-in">04</div>
+    <div class="section-label" data-anim="fade-up" style="animation-delay:.08s">Section Four</div>
+    <div class="section-title" data-anim="fade-up" style="animation-delay:.14s">Local Clusters & Autonomous Operation</div>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.2s">Secret management when local clusters operate disconnected from primary</p>
+    <div class="notes"><p>Transition to section 4. This is about how Performance Replication clusters behave when they lose connectivity to the primary.</p></div>
+  </div>
+
+  <!-- ⑯ Autonomous Operation -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 4 — Local Clusters</div>
+    <div class="eyebrow" data-anim="fade-up">Autonomous Operation</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">How Local Clusters Behave When Disconnected</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div style="display:flex;flex-direction:column;gap:10px" data-anim="stagger">
+        <div class="card card-accent">
+          <h3>What Continues Working</h3>
+          <ul style="margin-top:6px">
+            <li>Reading existing secrets (locally cached)</li>
+            <li>Token authentication (local tokens)</li>
+            <li>Local policy enforcement</li>
+            <li>Lease renewal for existing credentials</li>
+          </ul>
+        </div>
+        <div class="card card-red">
+          <h3 style="color:var(--red)">What Stops Working</h3>
+          <ul style="margin-top:6px">
+            <li>Writing new secrets (forwarded to primary — fails)</li>
+            <li>New dynamic credential generation</li>
+            <li>Policy changes (replicated from primary)</li>
+            <li>Auth method changes</li>
+          </ul>
+        </div>
+        <div class="card card-orange">
+          <h3 style="color:var(--orange)">Write Forwarding</h3>
+          <p style="font-size:0.85rem">By default, writes on a PR cluster are <strong style="color:var(--text-1)">forwarded to the primary</strong>. If the primary is unreachable, writes fail. Local writes are not possible in standard PR mode.</p>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="card">
+          <h3>Secret Management Model</h3>
+          <p style="font-size:0.85rem;margin-bottom:8px">Secrets are <strong style="color:var(--accent)">centrally managed in the Primary</strong> and replicated to PR clusters. Updates cannot originate from a PR cluster — they must be written to primary and will propagate.</p>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+            <div class="flow-row">
+              <div class="fbox hi" style="font-size:0.78rem">Primary<br><small>Write here</small></div>
+              <div class="arr-anim"><span></span><span></span><span></span></div>
+              <div class="fbox gr" style="font-size:0.78rem">PR Cluster A<br><small>Read only</small></div>
+            </div>
+            <div class="flow-row">
+              <div class="fbox hi" style="font-size:0.78rem">Primary<br><small>Write here</small></div>
+              <div class="arr-anim"><span></span><span></span><span></span></div>
+              <div class="fbox gr" style="font-size:0.78rem">PR Cluster B<br><small>Read only</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="card card-purple">
+          <h3 style="color:var(--purple)">Conflict Detection</h3>
+          <p style="font-size:0.85rem">Because writes can only originate from the primary, <strong style="color:var(--text-1)">write conflicts do not occur</strong> in standard PR mode. There is no merge or conflict resolution needed on reconnect — the PR cluster simply resumes receiving replication from primary.</p>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>Key message: PR clusters are read-optimised secondaries, not independent nodes. The "no write conflicts" point is important — the architecture prevents conflicts by design. This is simpler than it sounds but means the PR cluster cannot be used as a write endpoint during a primary outage.</p></div>
+  </div>
+
+  <!-- ⑰ Propagation Model -->
+  <div class="slide slide-accent">
+    <div class="section-pill">Section 4 — Local Clusters</div>
+    <div class="eyebrow" data-anim="fade-up">Propagation & Resync</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">How Updates Propagate & What Happens on Reconnect</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div>
+        <div class="card card-accent" style="margin-bottom:10px" data-anim="fade-up" style="animation-delay:.1s">
+          <h3>Central Primary, Push to Local</h3>
+          <p>All secret updates originate at the Primary. The PR mechanism <strong style="color:var(--accent)">continuously streams changes</strong> to connected PR clusters in near-real-time. There is no pull — the primary pushes.</p>
+        </div>
+
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>Secret updated on Primary</strong><p>Write lands on primary. WAL (Write Ahead Log) entry created.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Primary streams WAL to connected PR clusters</strong><p>Replication is continuous. Connected clusters receive changes within seconds.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num or">3</div>
+            <div><strong>PR cluster disconnects</strong><p>Primary queues WAL entries. PR cluster serves stale-but-last-known data locally.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>PR cluster reconnects</strong><p>Primary replays queued WAL entries to the PR cluster. No manual intervention. Cluster catches up automatically.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="card">
+          <h3>What "Conflicts" Means Here</h3>
+          <p style="font-size:0.85rem">In Vault PR, there are no write conflicts because <strong style="color:var(--text-1)">PR clusters cannot write independently</strong>. The only data divergence possible is:</p>
+          <ul style="margin-top:8px;font-size:0.85rem">
+            <li>PR cluster serving slightly stale reads during disconnect</li>
+            <li>WAL queue growing on primary during extended outage</li>
+          </ul>
+          <p style="font-size:0.85rem;margin-top:8px;color:var(--green)">On reconnect, the PR cluster fully resyncs — no manual merge required.</p>
+        </div>
+        <div class="card card-orange">
+          <h3 style="color:var(--orange)">Staleness Consideration</h3>
+          <p style="font-size:0.85rem">During disconnect, PR cluster reads may be stale. For break-glass credentials rotated on primary during the outage, the PR cluster will serve the <strong style="color:var(--text-1)">old credential</strong> until reconnect. Design Authority should consider whether break-glass access should always be directed to the primary.</p>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>The staleness point about break-glass credentials is a real architectural concern — if a credential is rotated on primary and the PR cluster is disconnected, local reads return the old credential. For break-glass specifically, consider routing access requests directly to primary or the DR cluster rather than local PR clusters.</p></div>
+  </div>
+
+  <!-- ⑱ Section 5 break -->
+  <div class="slide slide-section">
+    <div class="section-num" data-anim="fade-in">05</div>
+    <div class="section-label" data-anim="fade-up" style="animation-delay:.08s">Section Five</div>
+    <div class="section-title" data-anim="fade-up" style="animation-delay:.14s">Operational Best Practices</div>
+    <p class="subtitle" data-anim="fade-up" style="animation-delay:.2s">Vault unseal, backup, and restore procedures</p>
+    <div class="notes"><p>Final section. Covers day-to-day operational procedures the agency needs to have documented and tested.</p></div>
+  </div>
+
+  <!-- ⑲ Operational Best Practices -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 5 — Best Practices</div>
+    <div class="eyebrow" data-anim="fade-up">Operational Procedures</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">Unseal, Backup & Restore</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <!-- Unseal -->
+      <div>
+        <div style="color:var(--accent);font-size:0.76rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px">Unseal on Reboot</div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num">1</div>
+            <div><strong>Auto-Unseal (recommended)</strong><p>Vault configured with HSM / cloud KMS Transit Seal. On restart, Vault automatically unseals by calling the seal provider. No human intervention required.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">2</div>
+            <div><strong>Manual Unseal (fallback)</strong><p>If auto-unseal provider is unavailable, manual unseal using Shamir key shares. Requires quorum of key holders (e.g. 3 of 5).</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num or">3</div>
+            <div><strong>Unseal key governance</strong><p>Shamir shares distributed to separate custodians. No single person holds quorum. Shares stored offline, not in Vault itself.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">4</div>
+            <div><strong>Verify unseal via health check</strong><p><code>GET /v1/sys/health</code> — returns sealed status. Monitor for unexpected seal events.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backup & Restore -->
+      <div>
+        <div style="color:var(--green);font-size:0.76rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:8px">Backup & Restore</div>
+        <div class="step-list" data-anim="stagger">
+          <div class="step">
+            <div class="step-num gr">1</div>
+            <div><strong>Integrated Raft snapshot (recommended)</strong><p><code>vault operator raft snapshot save snapshot.gz</code> — consistent snapshot of all Vault data. Schedule regularly via cron or CI.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">2</div>
+            <div><strong>Store snapshot securely</strong><p>Snapshot contains encrypted Vault data. Store in secured object storage. Encrypt at rest. Retain multiple versions.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num gr">3</div>
+            <div><strong>Restore from snapshot</strong><p><code>vault operator raft snapshot restore snapshot.gz</code> — restores full state. Vault must be initialised but can be empty.</p></div>
+          </div>
+          <div class="step">
+            <div class="step-num">4</div>
+            <div><strong>Test restores regularly</strong><p>Backup is only valid if restore is tested. Include restore drill in DR testing schedule.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>Two key messages for Design Authority: (1) Auto-unseal is not optional at scale — manual unseal with Shamir shares is operationally fragile at 3am. (2) Snapshots are encrypted but must still be secured — they contain all Vault data. Test restores are mandatory, not optional.</p></div>
+  </div>
+
+  <!-- ⑳ Summary -->
+  <div class="slide slide-cover">
+    <div class="eyebrow" data-anim="fade-up">Summary</div>
+    <h1 data-anim="fade-up" style="animation-delay:.08s">Key Architecture Decisions</h1>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;max-width:860px" data-anim="stagger">
+      <div class="card card-accent" style="text-align:left">
+        <h3>Ansible + Vault</h3>
+        <p style="font-size:0.85rem">Vault is source of truth. Ansible is executor. AppRole auth — no static tokens in playbooks.</p>
+      </div>
+      <div class="card card-green" style="text-align:left">
+        <h3 style="color:var(--green)">Break-Glass</h3>
+        <p style="font-size:0.85rem">Control Groups enforce dual approval. RHEL via OS engine. Windows via Ansible+KV. Offline credentials in physical custody.</p>
+      </div>
+      <div class="card card-orange" style="text-align:left">
+        <h3 style="color:var(--orange)">DR</h3>
+        <p style="font-size:0.85rem">Promotion is manual — prevents split-brain. PR cluster re-pointing is not automatic. Include both in DR runbook and test regularly.</p>
+      </div>
+      <div class="card card-purple" style="text-align:left">
+        <h3 style="color:var(--purple)">Local Clusters</h3>
+        <p style="font-size:0.85rem">Writes always originate at primary. No conflicts by design. Consider routing break-glass reads to primary, not PR clusters.</p>
+      </div>
+    </div>
+    <div class="notes"><p>Closing slide. Leave on screen for Q&A. Each card maps to one section — easy for the audience to recall the key decision from each area.</p></div>
+  </div>
+
+</div>
+
+<!-- Navigation -->
+<div class="nav">
+  <button onclick="prev()">← Prev</button>
+  <span class="slide-counter" id="counter"></span>
+  <button onclick="next()">Next →</button>
+</div>
+
+<div id="notes-overlay">
+  <div id="notes-panel">
+    <h4>Speaker Notes — Slide <span id="notes-slide-num"></span></h4>
+    <p id="notes-text"></p>
+  </div>
+</div>
+
+<div id="overview"></div>
+
+<script>
+  const slides  = Array.from(document.querySelectorAll('.slide'));
+  const total   = slides.length;
+  let current   = 0, notesOpen = false, ovOpen = false;
+
+  function show(n, updateHash = true) {
+    const old = slides[current];
+    current = ((n % total) + total) % total;
+    old.classList.add('exit');
+    setTimeout(() => { old.classList.remove('exit'); old.classList.remove('active'); }, 240);
+    slides[current].classList.add('active');
+    const label = String(current+1).padStart(2,'0') + ' / ' + String(total).padStart(2,'0');
+    document.getElementById('counter').textContent   = label;
+    document.getElementById('slide-num').textContent = label;
+    document.getElementById('progress').style.width  = ((current+1)/total*100) + '%';
+    if (updateHash) history.replaceState(null,null,'#slide-'+(current+1));
+    if (notesOpen) updateNotes();
+    if (ovOpen) syncOv();
+  }
+
+  function next() { show(current+1); }
+  function prev() { show(current-1); }
+
+  function updateNotes() {
+    const el = slides[current].querySelector('.notes');
+    document.getElementById('notes-text').textContent = el ? el.textContent.trim() : '(No notes.)';
+    document.getElementById('notes-slide-num').textContent = current+1;
+  }
+  function toggleNotes() {
+    notesOpen = !notesOpen;
+    document.getElementById('notes-overlay').classList.toggle('open', notesOpen);
+    if (notesOpen) updateNotes();
+  }
+
+  function buildOv() {
+    const ov = document.getElementById('overview');
+    if (ov.children.length) return;
+    slides.forEach((sl, i) => {
+      const t = document.createElement('div');
+      t.className = 'ov-thumb' + (i===current?' active':'');
+      const bg = sl.classList.contains('slide-cover')||sl.classList.contains('slide-section') ? '#0b1e3d' : sl.classList.contains('slide-accent') ? '#0e1e38' : '#070d17';
+      t.style.background = bg;
+      const lb = document.createElement('div'); lb.className='ov-label'; lb.textContent=String(i+1).padStart(2,'0');
+      const ey = sl.querySelector('.eyebrow,.section-label');
+      const ti = document.createElement('div'); ti.className='ov-title'; ti.textContent = ey?ey.textContent.trim():'';
+      t.appendChild(lb); t.appendChild(ti);
+      t.addEventListener('click', () => { toggleOv(); show(i); });
+      ov.appendChild(t);
+    });
+  }
+  function syncOv() {
+    Array.from(document.getElementById('overview').children).forEach((t,i)=>t.classList.toggle('active',i===current));
+  }
+  function toggleOv() {
+    ovOpen = !ovOpen;
+    document.getElementById('overview').classList.toggle('open', ovOpen);
+    if (ovOpen) { buildOv(); syncOv(); }
+  }
+
+  document.addEventListener('keydown', e => {
+    if (['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' ') { e.preventDefault(); if (!ovOpen) next(); }
+    if (e.key==='ArrowLeft'||e.key==='ArrowUp')                  { e.preventDefault(); if (!ovOpen) prev(); }
+    if (e.key==='Home') show(0);
+    if (e.key==='End')  show(total-1);
+    if (e.key==='s'||e.key==='S') toggleNotes();
+    if (e.key==='o'||e.key==='O') toggleOv();
+    if (e.key==='f'||e.key==='F') document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen().catch(()=>{});
+    if (e.key==='Escape') { if(notesOpen)toggleNotes(); else if(ovOpen)toggleOv(); }
+  });
+
+  (function init() {
+    const m = window.location.hash.match(/^#slide-(\d+)$/);
+    const s = m ? Math.min(Math.max(parseInt(m[1])-1,0),total-1) : 0;
+    current = s;
+    slides[s].classList.add('active');
+    const label = String(s+1).padStart(2,'0')+' / '+String(total).padStart(2,'0');
+    document.getElementById('counter').textContent   = label;
+    document.getElementById('slide-num').textContent = label;
+    document.getElementById('progress').style.width  = ((s+1)/total*100)+'%';
+  })();
+</script>
+
+</body>
+</html>

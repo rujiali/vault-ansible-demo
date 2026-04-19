@@ -1,0 +1,60 @@
+---
+- name: SSH Key Pair Rotation — Vault KV v2 + Ansible
+  hosts: rhel_targets
+  gather_facts: false
+
+  vars:
+    vault_addr: "{{ lookup('env', 'VAULT_ADDR') | default('http://localhost:8200') }}"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+    tmp_key: /tmp/vault_ssh_rotation_key
+
+  tasks:
+    - name: Generate new ed25519 key pair
+      ansible.builtin.command:
+        cmd: "ssh-keygen -t ed25519 -f {{ tmp_key }} -N '' -C vault-managed -q"
+      delegate_to: localhost
+      changed_when: true
+
+    - name: Read new public key
+      ansible.builtin.slurp:
+        src: "{{ tmp_key }}.pub"
+      register: new_pubkey
+      delegate_to: localhost
+
+    - name: Read new private key
+      ansible.builtin.slurp:
+        src: "{{ tmp_key }}"
+      register: new_privkey
+      delegate_to: localhost
+
+    - name: Replace vault-managed key in RHEL authorized_keys
+      ansible.builtin.lineinfile:
+        path: /home/ansible/.ssh/authorized_keys
+        regexp: "vault-managed"
+        line: "{{ new_pubkey.content | b64decode | trim }}"
+        create: true
+        mode: '0600'
+
+    - name: Store new key pair in Vault KV v2
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/secret/data/ansible/ssh-key"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ vault_token }}"
+        body_format: json
+        body:
+          data:
+            private_key: "{{ new_privkey.content | b64decode }}"
+            public_key: "{{ new_pubkey.content | b64decode }}"
+        status_code: 200
+      delegate_to: localhost
+      no_log: true
+
+    - name: Remove temp key files
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tmp_key }}"
+        - "{{ tmp_key }}.pub"
+      delegate_to: localhost

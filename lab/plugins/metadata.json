@@ -1,0 +1,13 @@
+{
+  "version": "v0",
+  "plugin": {
+    "name": "vault-plugin-secrets-os",
+    "version": "v0.1.0+ent",
+    "type": "secret",
+    "platform": "linux",
+    "arch": "arm64",
+    "by": "hashicorp",
+    "pgp_sig": "-----BEGIN PGP SIGNATURE-----\n\nwsFzBAABCAAnBQJp3rOBCRDIIMbVzSerhxYhBDdOx1tIWRNgSoMcx8ggxtXNJ6uH\nAAADgw/+MTtZy6UfGudaPpnKFecWZGSoIkePcpSO0inD62MZAOYsjM7ZxB6FoNf7\nDE5JgJS5DAciOPYVgeDXAOCFjdiJgb8R1r9tjsiVcihujYPNUdV7sfMovgt1RDwh\nrYoD7oZ4BBQk3QBxyzSmd4/dcX4fyyesp3vGkddYCCaKoG+atulsCh1AQUhVoz/H\neU+LmnnnmvSv5kfWRdy8HX/zEDLIfOjqEKhRkN5aVgKYlot0iPIyeo53ub1Ug4ui\nXh00HRwN/uLH4dttLP0wmFzswuwcU+mREIik5GsjVIzKb6cAyxF+sYnFGg2N+I5G\nkxqVf7bGMZo8uV1zfl2v871OCzqFbzC0O2uYl4dIPLgMY8Oqy6zhsJnwRkWkozvw\n9H7TZn6GPc0uVg+6msP/TklIParC2sMhda4VxyyBfBkbFL5M6/BjbXiUsWm09arv\nVhLVnVSw2+mmPMWwI+RN2ZuKhFSugfGwwFeCx9bF4/HcJWAOZxQF0exz4freIfgK\nhlqr4iVVWf9w0V9w+uyo49bPekjwAhTjn+KfLebAzWa1wURAkS40hgn2iIfEPG7h\nV+vMRw5LWrjuWB0dBoXaQGa2XU8npWGCLobT1NmieZPp7LyIEDmTKF4fEbjM1oX4\nhLtfkeQ/fhNdLaNsAW+rLRur68b3OSIJ8ELVdesKFH1whfx9S5Q=\n=Mscm\n-----END PGP SIGNATURE-----",
+    "tier": "official"
+  }
+}

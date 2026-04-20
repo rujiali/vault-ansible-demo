@@ -732,7 +732,7 @@
           </div>
           <div class="step">
             <div class="step-num">2</div>
-            <div><strong>Break-glass account checked out from library</strong><p><code>POST /v1/openldap/library/&lt;set&gt;/check-out</code> — Vault issues a time-limited lease. Account locked to this checkout until check-in.</p></div>
+            <div><strong>Break-glass account checked out from library</strong><p><code>POST /v1/ldap/library/&lt;set&gt;/check-out</code> — Vault issues a time-limited lease. Account locked to this checkout until check-in.</p></div>
           </div>
           <div class="step">
             <div class="step-num">3</div>
@@ -740,7 +740,7 @@
           </div>
           <div class="step">
             <div class="step-num gr">4</div>
-            <div><strong>Check-in triggers immediate rotation</strong><p><code>POST /v1/openldap/library/&lt;set&gt;/check-in</code> — password rotated immediately after session ends. Account available for next checkout.</p></div>
+            <div><strong>Check-in triggers immediate rotation</strong><p><code>POST /v1/ldap/library/&lt;set&gt;/check-in</code> — password rotated immediately after session ends. Account available for next checkout.</p></div>
           </div>
         </div>
       </div>
@@ -781,13 +781,13 @@
       </tr>
       <tr>
         <td><span class="tag tag-win">WIN</span> Check out account</td>
-        <td><code>POST /v1/openldap/library/&lt;set&gt;/check-out</code></td>
+        <td><code>POST /v1/ldap/library/&lt;set&gt;/check-out</code></td>
         <td><code>vault_write</code></td>
         <td>Returns AD credential for break-glass session</td>
       </tr>
       <tr>
         <td><span class="tag tag-win">WIN</span> Check in account</td>
-        <td><code>POST /v1/openldap/library/&lt;set&gt;/check-in</code></td>
+        <td><code>POST /v1/ldap/library/&lt;set&gt;/check-in</code></td>
         <td><code>vault_write</code></td>
         <td>Vault rotates AD password immediately via LDAP</td>
       </tr>
@@ -926,7 +926,7 @@
           </div>
           <div class="step">
             <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">2</div>
-            <div><strong>Vault rotates the AD account password directly</strong><p><code>vault write -f openldap/library/&lt;set&gt;/check-in</code> — Vault connects to AD via LDAP and rotates the password. No AAP, no WinRM.</p></div>
+            <div><strong>Vault rotates the AD account password directly</strong><p><code>vault write -f ldap/library/&lt;set&gt;/check-in</code> — Vault connects to AD via LDAP and rotates the password. No AAP, no WinRM.</p></div>
           </div>
           <div class="step">
             <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">3</div>
@@ -943,7 +943,7 @@
   </div>
 
   <!-- ⑫ Vault Unavailable -->
-  <div class="slide slide-accent">
+  <div class="slide-hidden slide-accent" style="display:none">
     <div class="section-pill">Section 2 — Break-Glass</div>
     <div class="eyebrow" data-anim="fade-up">Offline Access</div>
     <h2 data-anim="fade-up" style="animation-delay:.06s">Break-Glass When Vault is Unavailable</h2>
@@ -1328,7 +1328,7 @@
       </div>
       <div class="card card-green" style="text-align:left">
         <h3 style="color:var(--green)">Break-Glass</h3>
-        <p style="font-size:0.85rem">Control Groups enforce dual approval. RHEL via OS engine. Windows via Ansible+KV. Offline credentials in physical custody.</p>
+        <p style="font-size:0.85rem">Control Groups enforce dual approval. RHEL via OS engine. Windows via LDAP engine (Vault-native). Offline credentials in physical custody.</p>
       </div>
       <div class="card card-orange" style="text-align:left">
         <h3 style="color:var(--orange)">DR</h3>

@@ -44,11 +44,11 @@ echo ""
 echo "=== Configuring Vault AD Secrets Engine ==="
 export VAULT_ADDR VAULT_TOKEN
 
-# Enable OpenLDAP secrets engine (licensed as "OpenLDAP Secrets Engine" in Vault 2.0-ent)
-vault secrets enable openldap 2>/dev/null || echo "OpenLDAP engine already enabled"
+# Enable LDAP secrets engine (Vault 2.0: "ldap" v2.0.0+builtin.vault supersedes "openldap" v0.18.0)
+vault secrets enable ldap 2>/dev/null || echo "LDAP engine already enabled"
 
 # Configure connection to OpenLDAP
-vault write openldap/config \
+vault write ldap/config \
   binddn="cn=admin,dc=corp,dc=example,dc=com" \
   bindpass="admin" \
   url="ldap://openldap:389" \
@@ -57,10 +57,10 @@ vault write openldap/config \
   starttls=false \
   schema=openldap
 
-echo "OpenLDAP engine configured"
+echo "LDAP engine configured"
 
 # Create library set for break-glass accounts
-vault write openldap/library/breakglass-windows \
+vault write ldap/library/breakglass-windows \
   service_account_names="breakglass-win01,breakglass-win02" \
   ttl=8h \
   max_ttl=24h \
@@ -70,13 +70,13 @@ echo "Library set 'breakglass-windows' created"
 
 echo ""
 echo "=== Verify ==="
-vault read openldap/library/breakglass-windows/status
+vault read ldap/library/breakglass-windows/status
 
 echo ""
 echo "=== LDAP Setup Complete ==="
 echo ""
 echo "Test checkout:"
-echo "  vault write -f openldap/library/breakglass-windows/check-out"
+echo "  vault write -f ldap/library/breakglass-windows/check-out"
 echo ""
 echo "Test check-in:"
-echo "  vault write -f openldap/library/breakglass-windows/check-in service_account_names=breakglass-win01"
+echo "  vault write -f ldap/library/breakglass-windows/check-in service_account_names=breakglass-win01"

@@ -29,6 +29,8 @@ init_and_unseal() {
   local addr=$1
   local name=$2
   local var_prefix=$3
+  local json_file
+  json_file="$(dirname "$0")/.${name}-init.json"
 
   echo ""
   echo "=== $name ==="
@@ -37,22 +39,32 @@ init_and_unseal() {
   local already_init status_out
   status_out=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null) || true
   already_init=$(echo "$status_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])")
-  if [ "$already_init" = "True" ]; then
-    echo "$name already initialized — skipping"
-    return
-  fi
 
-  local init_out
-  init_out=$(VAULT_ADDR=$addr vault operator init -key-shares=1 -key-threshold=1 -format=json)
   local unseal_key root_token
-  unseal_key=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
-  root_token=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+
+  if [ "$already_init" = "True" ]; then
+    if [ ! -f "$json_file" ]; then
+      echo "ERROR: $name already initialised but $json_file not found — wipe data/$(echo $name | tr '-' '/') and re-run"
+      exit 1
+    fi
+    echo "$name already initialised — loading keys from $json_file"
+    unseal_key=$(python3 -c "import json; d=json.load(open('$json_file')); print(d['unseal_keys_b64'][0])")
+    root_token=$(python3 -c "import json; d=json.load(open('$json_file')); print(d['root_token'])")
+  else
+    local init_out
+    init_out=$(VAULT_ADDR=$addr vault operator init -key-shares=1 -key-threshold=1 -format=json)
+    echo "$init_out" > "$json_file"
+    chmod 600 "$json_file"
+    unseal_key=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
+    root_token=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+    echo "  Init complete — keys saved to $json_file"
+  fi
 
   VAULT_ADDR=$addr vault operator unseal "$unseal_key"
   echo "  Unseal key : $unseal_key"
   echo "  Root token : $root_token"
 
-  # Append to creds file
+  # Write to creds file
   echo "${var_prefix}_ADDR=$addr" >> "$CREDS_FILE"
   echo "${var_prefix}_UNSEAL_KEY=$unseal_key" >> "$CREDS_FILE"
   echo "${var_prefix}_TOKEN=$root_token" >> "$CREDS_FILE"
@@ -62,7 +74,8 @@ init_and_unseal() {
 echo "Vault Lab Bootstrap"
 echo "==================="
 
-# Clear old creds
+# Only wipe creds if we are about to re-initialise — checked inside init_and_unseal
+# Always start fresh so partial runs don't leave stale entries
 rm -f "$CREDS_FILE"
 touch "$CREDS_FILE"
 chmod 600 "$CREDS_FILE"

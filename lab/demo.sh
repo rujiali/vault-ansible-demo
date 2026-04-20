@@ -74,7 +74,7 @@ printf "     │\n"
 printf "     ├── ${CYN}Vault Primary  :8200${NC}  (Enterprise 2.0)\n"
 printf "     │       ├── KV v2        SSH keys + SNMP  (AAP-orchestrated rotation)\n"
 printf "     │       ├── OS engine    RHEL local account password rotation\n"
-printf "     │       ├── OpenLDAP     Windows break-glass + password rotation\n"
+printf "     │       ├── LDAP         Windows break-glass + password rotation\n"
 printf "     │       └── AppRole auth (simulating AAP + OIDC)\n"
 printf "     │\n"
 printf "     ├── ${GRN}RHEL 10 VM     :22${NC}   (%s)\n" "$RHEL_IP"
@@ -265,19 +265,19 @@ printf "  ${DIM}  Library checkout pattern: account reserved per session, rotate
 echo ""
 
 step "Library configuration — two AD accounts in the pool:"
-cmd "vault read openldap/library/breakglass-windows"
+cmd "vault read ldap/library/breakglass-windows"
 
 press
 
 step "Current status — both accounts available:"
-cmd "vault read openldap/library/breakglass-windows/status"
+cmd "vault read ldap/library/breakglass-windows/status"
 
 press
 
 step "Operator checks out an account — Vault issues time-limited credential:"
 echo ""
-printf "${GRN}  \$ vault write -f openldap/library/breakglass-windows/check-out${NC}\n\n"
-CHECKOUT_JSON=$(vault write -format=json -f openldap/library/breakglass-windows/check-out)
+printf "${GRN}  \$ vault write -f ldap/library/breakglass-windows/check-out${NC}\n\n"
+CHECKOUT_JSON=$(vault write -format=json -f ldap/library/breakglass-windows/check-out)
 ACCT=$(echo "$CHECKOUT_JSON" | python3 -c \
   "import sys,json; print(json.load(sys.stdin)['data']['service_account_name'])")
 WIN_PASS=$(echo "$CHECKOUT_JSON" | python3 -c \
@@ -290,20 +290,20 @@ note "Account locked to this operator — no other operator can check out the sa
 press
 
 step "Library status — $ACCT unavailable while checked out:"
-cmd "vault read openldap/library/breakglass-windows/status"
+cmd "vault read ldap/library/breakglass-windows/status"
 
 press
 
 step "Session complete — operator checks in, Vault rotates AD password immediately:"
-cmd "vault write -f openldap/library/breakglass-windows/check-in service_account_names=$ACCT"
+cmd "vault write -f ldap/library/breakglass-windows/check-in service_account_names=$ACCT"
 note "Vault connects to AD via LDAP and changes the password — no AAP, no WinRM"
 
 press
 
 step "Next checkout issues a brand new password — old credential permanently invalidated:"
 echo ""
-printf "${GRN}  \$ vault write -f openldap/library/breakglass-windows/check-out${NC}\n\n"
-CHECKOUT2_JSON=$(vault write -format=json -f openldap/library/breakglass-windows/check-out)
+printf "${GRN}  \$ vault write -f ldap/library/breakglass-windows/check-out${NC}\n\n"
+CHECKOUT2_JSON=$(vault write -format=json -f ldap/library/breakglass-windows/check-out)
 ACCT2=$(echo "$CHECKOUT2_JSON" | python3 -c \
   "import sys,json; print(json.load(sys.stdin)['data']['service_account_name'])")
 WIN_PASS2=$(echo "$CHECKOUT2_JSON" | python3 -c \
@@ -319,7 +319,7 @@ note "Break-glass session credential permanently invalidated on check-in"
 press
 
 step "Check in to clean up:"
-cmd "vault write -f openldap/library/breakglass-windows/check-in service_account_names=$ACCT2"
+cmd "vault write -f ldap/library/breakglass-windows/check-in service_account_names=$ACCT2"
 
 press
 

@@ -15,6 +15,7 @@ services:
       - ./plugins:/vault/plugins
     cap_add:
       - IPC_LOCK
+      - SETFCAP
     command: vault server -config=/vault/config/vault.hcl
     networks:
       - vault-net

@@ -14,6 +14,12 @@ RHEL_KEY="$HOME/.ssh/lab_key"
 echo "=== Vault Demo Setup ==="
 echo ""
 
+# ── Secret Engines ────────────────────────────────────────────
+echo "--- Enabling secret engines ---"
+vault secrets enable ssh 2>/dev/null || echo "(ssh already enabled)"
+vault plugin register -download -version="0.1.0+ent" secret vault-plugin-secrets-os 2>/dev/null || echo "(os plugin already registered)"
+vault secrets enable -path=os -plugin-version="0.1.0+ent" vault-plugin-secrets-os 2>/dev/null || echo "(os already enabled)"
+
 # ── Ansible Policy ────────────────────────────────────────────
 echo "--- Creating Ansible policy ---"
 vault policy write ansible-rotation - <<'EOF'
@@ -88,6 +94,24 @@ vault write ssh/roles/otp-rhel \
   default_user=ansible \
   cidr_list="0.0.0.0/0"
 echo "SSH OTP role 'otp-rhel' created"
+
+# ── OS Secrets Engine — RHEL host + accounts ──────────────────
+echo ""
+echo "--- Configuring OS secrets engine ---"
+vault write os/config ssh_host_key_trust_on_first_use=true
+vault write os/hosts/rhel-target \
+  address=$RHEL_IP \
+  port=22 \
+  rotation_period=720h
+vault write os/hosts/rhel-target/accounts/ansible \
+  username=ansible \
+  password="password"
+vault write os/hosts/rhel-target/accounts/breakglass-rhel \
+  username=breakglass-rhel \
+  password="Breakglass123!" \
+  parent_account_ref=ansible \
+  rotation_period=720h
+echo "OS engine configured — rhel-target registered with breakglass-rhel account"
 
 
 # ── Control Groups — Identity Setup ──────────────────────────

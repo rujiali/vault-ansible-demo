@@ -1,2 +1,8 @@
 .env
+lab/.env
 .vault-creds
+lab/.vault-creds
+lab/.vault-primary-init.json
+lab/.vault-dr-init.json
+lab/.vault-pr-init.json
+lab/data/

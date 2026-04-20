@@ -100,7 +100,3 @@ Enables secrets engines (KV v2, SSH, OS, LDAP), creates AppRole, userpass accoun
 | Vault operator | userpass: `operator` | `operator123` |
 | Security approver | userpass: `sec-approver` | `approver123` |
 | LDAP admin | `cn=admin,dc=corp,dc=example,dc=com` | `admin` |
-
-## License Note
-
-The Vault Enterprise license must **not** include `PKI-only Secrets`. A PKI-only license blocks KV, SSH, Transit, LDAP, and the OS Secrets Engine. Request a full enterprise trial from [portal.cloud.hashicorp.com](https://portal.cloud.hashicorp.com).

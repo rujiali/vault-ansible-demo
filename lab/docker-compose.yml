@@ -39,6 +39,7 @@ services:
     volumes:
       - ./config/vault-dr.hcl:/vault/config/vault.hcl
       - ./data/dr:/vault/data
+      - ./plugins:/vault/plugins
     cap_add:
       - IPC_LOCK
     command: vault server -config=/vault/config/vault.hcl
@@ -58,6 +59,7 @@ services:
     volumes:
       - ./config/vault-pr.hcl:/vault/config/vault.hcl
       - ./data/pr:/vault/data
+      - ./plugins:/vault/plugins
     cap_add:
       - IPC_LOCK
     command: vault server -config=/vault/config/vault.hcl

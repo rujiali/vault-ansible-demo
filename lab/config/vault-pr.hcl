@@ -12,3 +12,5 @@ api_addr      = "http://vault-pr:8200"
 cluster_addr  = "http://vault-pr:8201"
 ui            = true
 disable_mlock = true
+
+plugin_directory = "/vault/plugins"

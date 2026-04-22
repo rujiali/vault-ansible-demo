@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================
-# Vault Enterprise Demo — Sections 1 & 2
+# Vault Enterprise Demo — Sections 1-5
 # Run from: lab/   (cd vault-ansible-demo/lab && ./demo.sh)
+# Usage:    ./demo.sh [--section 1|2|3|4|5]
 # Prerequisites: bootstrap.sh, ldap-setup.sh, vault-setup.sh
 # ============================================================
 cd "$(dirname "$0")"
+
+START_SECTION=1
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --section|-s) START_SECTION="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
 
 # ── Colours ──────────────────────────────────────────────────
 BOLD='\033[1m'; DIM='\033[2m'; NC='\033[0m'
@@ -65,6 +74,7 @@ fi
 # =============================================================
 # INTRO
 # =============================================================
+if [ "$START_SECTION" -le 1 ]; then
 clear
 banner "Vault Enterprise 2.0 — Operational Security Demo"
 
@@ -89,9 +99,12 @@ note "This lab:   AppRole authentication — same Vault API surface"
 
 press
 
+fi # end intro
+
 # =============================================================
 # SECTION 1 — ANSIBLE-BASED AUTOMATION
 # =============================================================
+if [ "$START_SECTION" -le 1 ]; then
 clear
 banner "SECTION 1 — Ansible-Based Automation"
 
@@ -323,9 +336,12 @@ cmd "vault write -f ldap/library/breakglass-windows/check-in service_account_nam
 
 press
 
+fi # end section 1
+
 # =============================================================
 # SECTION 2 — BREAK-GLASS ACCESS WORKFLOW
 # =============================================================
+if [ "$START_SECTION" -le 2 ]; then
 clear
 banner "SECTION 2 — Break-Glass Access Workflow"
 
@@ -430,6 +446,401 @@ note "Same result: session credential permanently invalidated, account available
 press
 
 
+fi # end section 2
+
+# =============================================================
+# SECTION 3 — DISASTER RECOVERY
+# =============================================================
+if [ "$START_SECTION" -le 3 ]; then
+clear
+banner "SECTION 3 — Disaster Recovery Operations"
+
+printf "  ${BOLD}Topology:${NC}  Primary → DR secondary (full replication) + PR secondary (read locality)\n\n"
+note "DR cluster is passive — no reads or writes until promoted"
+note "Promotion is manual — prevents split-brain"
+
+press
+
+# Pre-generate a vault-pr-native root token while primary is still up.
+# vault-pr validates tokens against its own HMAC key (not primary's), so tokens
+# created on vault-primary are invalid on vault-pr. We obtain a local token by:
+#   1. Ensure vault-pr is unsealed (unseal with PRIMARY_UNSEAL_KEY if needed)
+#   2. Login to vault-pr via replicated userpass (pr-admin)
+#   3. Cancel any stale generate-root attempt
+#   4. Run generate-root with the primary unseal key → vault-pr-native root token
+# Retry for up to 90s — vault-pr may still be syncing pr-admin from primary.
+PR_NATIVE_TOKEN=""
+printf "  ${DIM}  Obtaining vault-pr native token...${NC}\n"
+
+# Ensure vault-pr is unsealed before attempting login
+_pr_sealed=$(VAULT_ADDR=$PR_ADDR vault status -format=json 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
+if [ "$_pr_sealed" != "False" ]; then
+  printf "  ${DIM}  vault-pr is sealed — unsealing...${NC}\n"
+  VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
+  sleep 3
+fi
+
+for _i in 1 2 3 4 5 6 7 8 9; do
+  # Try unsealing again in case vault-pr re-sealed during sync
+  _pr_sealed2=$(VAULT_ADDR=$PR_ADDR vault status -format=json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
+  if [ "$_pr_sealed2" != "False" ]; then
+    VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
+    sleep 2
+  fi
+  _pr_admin=$(VAULT_ADDR=$PR_ADDR vault login \
+    -method=userpass -format=json username=pr-admin password=pradmin123 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null || echo "")
+  if [ -n "$_pr_admin" ]; then
+    VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin \
+      vault delete sys/generate-root/attempt >/dev/null 2>&1 || true
+    _pr_init=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin \
+      vault operator generate-root -init -format=json 2>/dev/null || echo "")
+    if [ -n "$_pr_init" ]; then
+      _pr_nonce=$(echo "$_pr_init" | python3 -c "import sys,json; print(json.load(sys.stdin)['nonce'])")
+      _pr_otp=$(echo "$_pr_init"   | python3 -c "import sys,json; print(json.load(sys.stdin)['otp'])")
+      _pr_enc=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin \
+        vault operator generate-root -nonce="$_pr_nonce" -format=json "$PRIMARY_UNSEAL_KEY" 2>/dev/null \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('encoded_token') or d.get('encoded_root_token'))" 2>/dev/null || echo "")
+      [ -n "$_pr_enc" ] && PR_NATIVE_TOKEN=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin vault operator generate-root \
+        -decode="$_pr_enc" -otp="$_pr_otp" 2>/dev/null || echo "")
+    fi
+  fi
+  [ -n "$PR_NATIVE_TOKEN" ] && break
+  printf "  ${DIM}  vault-pr not ready yet, retrying in 10s (attempt $_i/9)...${NC}\n"
+  sleep 10
+done
+if [ -z "$PR_NATIVE_TOKEN" ]; then
+  printf "  ${RED}  ERROR:${NC} Could not generate vault-pr native token after 90s.\n"
+  printf "  ${YLW}  Diagnosing vault-pr state:${NC}\n"
+  VAULT_ADDR=$PR_ADDR vault status 2>&1 | head -10 || true
+  printf "  ${YLW}  Run ./reset-demo.sh and wait for it to complete before running the demo.${NC}\n\n"
+  exit 1
+fi
+printf "  ${GRN}  vault-pr native token ready${NC}\n\n"
+
+# ── 3.1 Replication Status ────────────────────────────────────
+section "3.1  Current Replication Status"
+
+step "Primary replication state:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault read -format=json sys/replication/status | python3 -c \"
+import sys,json
+d=json.load(sys.stdin)['data']
+dr=d.get('dr',{})
+perf=d.get('performance',{})
+print('DR  mode :', dr.get('mode','n/a'), '  cluster_id:', dr.get('cluster_id','n/a')[:8]+'...' if dr.get('cluster_id') else 'n/a')
+print('PR  mode :', perf.get('mode','n/a'), '  cluster_id:', perf.get('cluster_id','n/a')[:8]+'...' if perf.get('cluster_id') else 'n/a')
+\""
+
+press
+
+step "DR secondary status:"
+cmd "VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$DR_TOKEN vault read -format=json sys/replication/dr/status | python3 -c \"
+import sys,json
+d=json.load(sys.stdin)['data']
+print('mode            :', d.get('mode'))
+print('state           :', d.get('state'))
+print('primary_cluster :', d.get('primary_cluster_addr','n/a'))
+print('last_remote_wal :', d.get('last_remote_wal','n/a'))
+\""
+
+press
+
+# ── 3.2 Simulate Primary Failure ──────────────────────────────
+clear
+section "3.2  Simulate Primary Failure"
+
+note "In production: declare failure only when primary is confirmed unrecoverable — split-brain risk"
+
+press
+
+step "Stopping vault-primary to simulate failure:"
+cmd "docker compose -f $(dirname $0)/docker-compose.yml stop vault-primary"
+note "Primary is now unreachable"
+
+press
+
+step "Confirming primary is down:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR vault status 2>&1 || true"
+
+press
+
+# ── 3.3 Generate DR Operation Token & Promote ─────────────────
+clear
+section "3.3  Promote DR Cluster to Primary"
+
+step "Generate DR operation token on DR secondary:"
+INIT_JSON=$(VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault operator generate-root -dr-token -init -format=json)
+DR_NONCE=$(echo "$INIT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['nonce'])")
+DR_OTP=$(echo "$INIT_JSON"   | python3 -c "import sys,json; print(json.load(sys.stdin)['otp'])")
+ENCODED=$(VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault operator generate-root -dr-token -nonce="$DR_NONCE" -format=json "$PRIMARY_UNSEAL_KEY" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('encoded_token') or d.get('encoded_root_token'))")
+DR_OP_TOKEN=$(VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault operator generate-root -dr-token -decode="$ENCODED" -otp="$DR_OTP")
+printf "  ${GRN}  DR operation token generated${NC}\n\n"
+
+press
+
+step "Promoting DR cluster to primary:"
+cmd "VAULT_ADDR=$DR_ADDR vault write -f sys/replication/dr/secondary/promote dr_operation_token=$DR_OP_TOKEN"
+note "DR cluster is now the active primary"
+
+press
+
+step "Confirm DR cluster is now primary:"
+cmd "VAULT_ADDR=$DR_ADDR vault read -format=json sys/replication/dr/status | python3 -c \"
+import sys,json
+d=json.load(sys.stdin)['data']
+print('mode  :', d.get('mode'))
+print('state :', d.get('state'))
+\""
+
+press
+
+# ── 3.4 Re-point PR Cluster ───────────────────────────────────
+clear
+section "3.4  Re-point PR Cluster to New Primary"
+
+note "PR clusters do NOT automatically re-point after DR failover — this is a manual step"
+note "vault-primary is still down — but vault-pr accepts this command because vault-dr (the new"
+note "primary) re-bootstrapped its replication CA, and vault-pr validates the activation token locally"
+
+step "Generate new secondary token on the new primary (vault-dr):"
+# vault-dr inherited vault-primary's PR state — revoke the stale vault-pr entry first
+VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write -f sys/replication/performance/primary/revoke-secondary id=vault-pr >/dev/null 2>&1 || true
+sleep 2
+PR_WRAP=$(VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write -format=json sys/replication/performance/primary/secondary-token id=vault-pr \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['wrap_info']['token'])")
+printf "  ${GRN}  Secondary token generated${NC}\n\n"
+
+press
+
+step "Re-point vault-pr to new primary (vault-dr):"
+# vault-pr validates tokens by forwarding to its primary — which is down.
+# Use the PR_NATIVE_TOKEN pre-generated at section start against vault-pr's local cluster.
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault write sys/replication/performance/secondary/update-primary token=$PR_WRAP primary_api_addr=http://vault-dr:8200"
+note "vault-pr is now replicating from vault-dr"
+
+press
+
+# ── 3.5 Restore Original Primary ──────────────────────────────
+clear
+section "3.5  Restore Original Primary  (lab cleanup)"
+
+step "Restarting vault-primary:"
+cmd "docker compose -f $(dirname $0)/docker-compose.yml start vault-primary"
+sleep 5
+cmd "VAULT_ADDR=$PRIMARY_ADDR vault operator unseal $PRIMARY_UNSEAL_KEY"
+note "In production: original primary would be re-joined as a secondary or decommissioned"
+
+press
+
+step "Restoring DR replication — re-enrolling vault-dr as secondary:"
+VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault write -f sys/replication/dr/primary/disable &>/dev/null || true
+sleep 3
+VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault write -f sys/replication/dr/primary/disable &>/dev/null || true
+sleep 2
+VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault write -f sys/replication/dr/primary/enable &>/dev/null
+sleep 3
+DR_REWRAP=$(VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write -format=json sys/replication/dr/primary/secondary-token id=vault-dr \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['wrap_info']['token'])")
+VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write sys/replication/dr/secondary/enable token=$DR_REWRAP primary_api_addr=http://vault-primary:8200 &>/dev/null
+printf "  ${GRN}  DR replication restored — vault-dr is secondary again${NC}\n\n"
+
+# Restore vault-pr as secondary of vault-primary.
+# After 3.4 vault-pr synced vault-dr's token store, so PR_NATIVE_TOKEN is now invalid on vault-pr.
+# A full wipe + re-init is the only reliable path.
+printf "  ${DIM}  Restoring vault-pr (wipe + re-init, ~45s)...${NC}\n"
+VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write -f sys/replication/performance/primary/revoke-secondary id=vault-pr &>/dev/null 2>&1 || true
+docker compose -f "$(dirname $0)/docker-compose.yml" stop vault-pr >/dev/null 2>&1
+rm -rf "$(dirname $0)/data/pr"
+docker compose -f "$(dirname $0)/docker-compose.yml" start vault-pr >/dev/null 2>&1
+sleep 5
+_pr_ij=$(VAULT_ADDR=$PR_ADDR vault operator init -key-shares=1 -key-threshold=1 -format=json 2>/dev/null)
+_pr_uk=$(echo "$_pr_ij" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])" 2>/dev/null)
+_pr_rt=$(echo "$_pr_ij" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])" 2>/dev/null)
+VAULT_ADDR=$PR_ADDR vault operator unseal "$_pr_uk" >/dev/null 2>&1
+_pr_wrap=$(VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
+  vault write -format=json sys/replication/performance/primary/secondary-token id=vault-pr \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['wrap_info']['token'])" 2>/dev/null)
+VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_rt \
+  vault write sys/replication/performance/secondary/enable \
+  token="$_pr_wrap" primary_api_addr=http://vault-primary:8200 >/dev/null 2>&1
+sleep 45
+VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" &>/dev/null 2>&1 || true
+sleep 3
+
+# Regenerate PR_NATIVE_TOKEN — vault-pr's token store was replaced during secondary enable,
+# so the token from the section 3 preamble is now invalid. Generate a fresh one while
+# vault-primary is still up (before section 4 stops it).
+PR_NATIVE_TOKEN=""
+printf "  ${DIM}  Regenerating vault-pr native token for section 4...${NC}\n"
+for _i in 1 2 3 4 5 6; do
+  _pr_adm35=$(VAULT_ADDR=$PR_ADDR vault login \
+    -method=userpass -format=json username=pr-admin password=pradmin123 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null || echo "")
+  if [ -n "$_pr_adm35" ]; then
+    VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_adm35 \
+      vault delete sys/generate-root/attempt >/dev/null 2>&1 || true
+    _pr_i35=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_adm35 \
+      vault operator generate-root -init -format=json 2>/dev/null || echo "")
+    if [ -n "$_pr_i35" ]; then
+      _n35=$(echo "$_pr_i35" | python3 -c "import sys,json; print(json.load(sys.stdin)['nonce'])")
+      _o35=$(echo "$_pr_i35" | python3 -c "import sys,json; print(json.load(sys.stdin)['otp'])")
+      _e35=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_adm35 \
+        vault operator generate-root -nonce="$_n35" -format=json "$PRIMARY_UNSEAL_KEY" 2>/dev/null \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('encoded_token') or d.get('encoded_root_token'))" 2>/dev/null || echo "")
+      [ -n "$_e35" ] && PR_NATIVE_TOKEN=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_adm35 vault operator generate-root \
+        -decode="$_e35" -otp="$_o35" 2>/dev/null || echo "")
+    fi
+  fi
+  [ -n "$PR_NATIVE_TOKEN" ] && break
+  printf "  ${DIM}  vault-pr not ready yet, retrying in 10s (attempt $_i/6)...${NC}\n"
+  sleep 10
+done
+if [ -z "$PR_NATIVE_TOKEN" ]; then
+  printf "  ${RED}  ERROR:${NC} Could not regenerate vault-pr native token after sync.\n"
+  printf "  ${YLW}  Run ./reset-demo.sh before continuing.${NC}\n\n"
+  exit 1
+fi
+printf "  ${GRN}  vault-pr native token ready for section 4${NC}\n\n"
+
+printf "  ${GRN}  PR replication restored — vault-pr is secondary of vault-primary again${NC}\n\n"
+
+press
+
+fi # end section 3
+
+# =============================================================
+# SECTION 4 — LOCAL CLUSTERS & AUTONOMOUS OPERATION
+# =============================================================
+if [ "$START_SECTION" -le 4 ]; then
+clear
+banner "SECTION 4 — Local Clusters & Autonomous Operation"
+
+printf "  ${BOLD}What happens on the PR cluster when primary is unreachable?${NC}\n\n"
+printf "  ${GRN}  Continues:${NC}  reads, token auth, local policy enforcement\n"
+printf "  ${RED}  Stops:${NC}     writes, new dynamic creds, policy changes\n"
+echo ""
+
+press
+
+# ── 4.1 Read During Disconnect ────────────────────────────────
+section "4.1  Reads Continue During Disconnect"
+
+step "Stop vault-primary to simulate disconnect:"
+cmd "docker compose -f $(dirname $0)/docker-compose.yml stop vault-primary"
+sleep 2
+
+step "Read from PR cluster — succeeds from local cache:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv get secret/ansible/snmp"
+note "PR cluster serves last-known data — no primary needed for reads"
+
+press
+
+# ── 4.2 Write Fails During Disconnect ─────────────────────────
+section "4.2  Writes Fail During Disconnect"
+
+step "Attempt a write to PR cluster — fails, cannot forward to primary:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv put secret/ansible/snmp community_string=test-during-outage 2>&1 || true"
+note "Writes are forwarded to primary — if primary unreachable, write fails"
+
+press
+
+# ── 4.3 Reconnect & Resync ────────────────────────────────────
+section "4.3  Reconnect & Automatic Resync"
+
+step "Restart vault-primary:"
+cmd "docker compose -f $(dirname $0)/docker-compose.yml start vault-primary"
+sleep 3
+cmd "VAULT_ADDR=$PRIMARY_ADDR vault operator unseal $PRIMARY_UNSEAL_KEY"
+
+press
+
+step "Write now succeeds — forwarded to primary:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv put secret/ansible/snmp community_string=post-reconnect"
+note "No manual resync needed — PR cluster catches up automatically on reconnect"
+
+press
+
+step "PR cluster reflects the latest value:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv get secret/ansible/snmp"
+
+press
+
+fi # end section 4
+
+# =============================================================
+# SECTION 5 — OPERATIONAL BEST PRACTICES
+# =============================================================
+if [ "$START_SECTION" -le 5 ]; then
+clear
+banner "SECTION 5 — Operational Best Practices"
+
+printf "  ${BOLD}Unseal, Backup & Restore${NC}\n\n"
+
+press
+
+# ── 5.1 Unseal on Reboot ──────────────────────────────────────
+section "5.1  Unseal on Restart"
+
+step "Current seal status — unsealed, Shamir:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault status"
+note "Lab uses manual Shamir unseal. Production: configure auto-unseal via HSM or cloud KMS"
+
+press
+
+step "Simulate restart — seal the vault:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault operator seal"
+
+press
+
+step "Confirm sealed:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR vault status 2>&1 || true"
+
+press
+
+step "Unseal with key share:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR vault operator unseal $PRIMARY_UNSEAL_KEY"
+note "With Shamir 3-of-5, three separate custodians would each provide their share"
+
+press
+
+# ── 5.2 Raft Snapshot Backup ──────────────────────────────────
+clear
+section "5.2  Backup — Raft Snapshot"
+
+step "Save a consistent snapshot of all Vault data:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault operator raft snapshot save /tmp/vault-demo-snapshot.gz"
+cmd "ls -lh /tmp/vault-demo-snapshot.gz"
+note "Snapshot is encrypted — safe to store in object storage. Schedule via cron in production."
+
+press
+
+# ── 5.3 Raft Snapshot Restore ─────────────────────────────────
+section "5.3  Restore — Raft Snapshot"
+
+step "Restore from snapshot (non-destructive in this demo — same data):"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault operator raft snapshot restore -force /tmp/vault-demo-snapshot.gz"
+note "In production: restore to an initialised but empty cluster. Test restores regularly."
+
+press
+
+step "Verify data intact after restore:"
+cmd "VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN vault kv get secret/ansible/snmp"
+
+press
+
+fi # end section 5
+
 # =============================================================
 # SUMMARY
 # =============================================================
@@ -449,4 +860,20 @@ printf "  %-4s Request            operator reads path → gets accessor + wrappi
 printf "  %-4s Approve            sec-approver calls authorize → identity logged in audit\n" "✓"
 printf "  %-4s Unwrap             credential released only after all approvals met\n" "✓"
 printf "  %-4s Post-use rotation  RHEL rotated via OS Engine, Windows via LDAP check-in\n" "✓"
+echo ""
+printf "  ${BOLD}Section 3 — Disaster Recovery${NC}\n"
+printf "  %-4s Replication status  Primary DR + PR replication state verified\n" "✓"
+printf "  %-4s DR promotion        DR cluster promoted to primary via operation token\n" "✓"
+printf "  %-4s PR re-point         PR cluster re-enabled against new primary\n" "✓"
+printf "  %-4s Primary restore     Original primary restarted and unsealed\n" "✓"
+echo ""
+printf "  ${BOLD}Section 4 — Autonomous Operation${NC}\n"
+printf "  %-4s Reads continue      PR cluster serves cached data during primary outage\n" "✓"
+printf "  %-4s Writes fail         Write forwarding fails when primary unreachable\n" "✓"
+printf "  %-4s Auto resync         PR cluster catches up automatically on reconnect\n" "✓"
+echo ""
+printf "  ${BOLD}Section 5 — Operational Best Practices${NC}\n"
+printf "  %-4s Unseal              Seal + unseal cycle with Shamir key share\n" "✓"
+printf "  %-4s Backup              Raft snapshot saved\n" "✓"
+printf "  %-4s Restore             Snapshot restored, data verified intact\n" "✓"
 echo ""

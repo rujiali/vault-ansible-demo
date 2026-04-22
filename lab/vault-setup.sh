@@ -161,6 +161,17 @@ vault write auth/userpass/users/sec-approver \
   token_policies="security-approver"
 echo "User 'sec-approver' created (password: approver123)"
 
+# pr-admin: used by demo/reset scripts to obtain a native vault-pr root token
+# (PR secondary tokens are cluster-specific — primary tokens do not validate on secondaries)
+vault policy write pr-admin - <<'EOF'
+path "sys/generate-root/*" { capabilities = ["create","update","read","delete","sudo"] }
+path "sys/replication/*"   { capabilities = ["create","update","read","delete","sudo"] }
+EOF
+vault write auth/userpass/users/pr-admin \
+  password="pradmin123" \
+  token_policies="pr-admin"
+echo "User 'pr-admin' created (for PR secondary root-token bootstrap)"
+
 echo ""
 echo "--- Wiring identity entities and security-team group ---"
 USERPASS_ACCESSOR=$(vault auth list -format=json | \

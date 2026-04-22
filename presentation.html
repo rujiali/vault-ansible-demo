@@ -1307,13 +1307,9 @@
           </ul>
           <p style="font-size:0.85rem;margin-top:8px;color:var(--green)">On reconnect, the PR cluster fully resyncs — no manual merge required.</p>
         </div>
-        <div class="card card-orange">
-          <h3 style="color:var(--orange)">Staleness Consideration</h3>
-          <p style="font-size:0.85rem">During disconnect, PR cluster reads may be stale. For break-glass credentials rotated on primary during the outage, the PR cluster will serve the <strong style="color:var(--text-1)">old credential</strong> until reconnect. Design Authority should consider whether break-glass access should always be directed to the primary.</p>
-        </div>
       </div>
     </div>
-    <div class="notes"><p>The staleness point about break-glass credentials is a real architectural concern — if a credential is rotated on primary and the PR cluster is disconnected, local reads return the old credential. For break-glass specifically, consider routing access requests directly to primary or the DR cluster rather than local PR clusters.</p></div>
+    <div class="notes"><p>Key messages: (1) No write conflicts by design — PR clusters cannot write independently. (2) On reconnect, the PR cluster fully resyncs automatically — no manual intervention needed.</p></div>
   </div>
 
   <!-- ⑱ Section 5 break -->
@@ -1383,7 +1379,7 @@
 
   <!-- ⑳ Summary -->
   <div class="slide slide-cover">
-    <div class="eyebrow" data-anim="fade-up">Summary</div>
+    <div class="eyebrow" data-anim="fade-up">Demo Complete</div>
     <h1 data-anim="fade-up" style="animation-delay:.08s">Summary</h1>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;max-width:860px" data-anim="stagger">
       <div class="card card-accent" style="text-align:left">
@@ -1402,8 +1398,12 @@
         <h3 style="color:var(--purple)">Local Clusters</h3>
         <p style="font-size:0.85rem">Writes always originate at primary. No conflicts by design. Consider routing break-glass reads to primary, not PR clusters.</p>
       </div>
+      <div class="card" style="text-align:left;grid-column:1/-1;border-color:var(--yellow);background:rgba(251,191,36,0.06)">
+        <h3 style="color:var(--yellow)">Operational Best Practices</h3>
+        <p style="font-size:0.85rem">Auto-unseal via HSM or cloud KMS for production — manual Shamir unseal is operationally fragile at scale. Schedule encrypted Raft snapshots regularly and test restores. Vault backup is a prerequisite for break-glass resilience.</p>
+      </div>
     </div>
-    <div class="notes"><p>Closing slide. Leave on screen for Q&A. Each card maps to one section — easy for the audience to recall the key decision from each area.</p></div>
+    <div class="notes"><p>Closing slide. Leave on screen for Q&A. Each card maps to one section — easy for the audience to recall the key takeaway from each area.</p></div>
   </div>
 
 </div>

@@ -445,6 +445,18 @@ note "Same result: session credential permanently invalidated, account available
 
 press
 
+step "If Vault itself is unavailable — recovery path:"
+printf "  ${YLW}  If Vault is completely unreachable, break-glass access requires restoring Vault first.${NC}\n"
+printf "  ${DIM}  Recovery path:${NC}\n"
+printf "      1. Restore from Raft snapshot  (covered in Section 5)\n"
+printf "      2. Unseal the restored cluster\n"
+printf "      3. Resume normal break-glass workflow\n"
+echo ""
+note "This is why regular snapshot backups (Section 5) are a prerequisite for break-glass resilience"
+note "Production recommendation: maintain an out-of-band emergency credential store for the period between failure and Vault restoration"
+
+press
+
 
 fi # end section 2
 
@@ -755,6 +767,22 @@ note "Writes are forwarded to primary — if primary unreachable, write fails"
 
 press
 
+step "Why this design eliminates write conflicts:"
+printf "  ${BOLD}  Propagation model:${NC}\n"
+printf "      All writes originate at the Primary only.\n"
+printf "      The PR cluster forwards writes to Primary — it never accepts them locally.\n"
+printf "      During a Primary outage, writes fail immediately rather than buffering locally.\n"
+echo ""
+printf "  ${BOLD}  Conflict resolution:${NC}\n"
+printf "      Write conflicts ${GRN}cannot occur${NC} — there is only one write endpoint.\n"
+printf "      On reconnect, the PR cluster resumes receiving the WAL stream from Primary.\n"
+printf "      No merge, no reconciliation, no manual intervention required.\n"
+echo ""
+note "The tradeoff: zero conflicts, but zero write availability during a Primary outage"
+note "For break-glass credential reads during an outage: PR cluster serves the last-known value"
+
+press
+
 # ── 4.3 Reconnect & Resync ────────────────────────────────────
 section "4.3  Reconnect & Automatic Resync"
 
@@ -773,6 +801,19 @@ press
 
 step "PR cluster reflects the latest value:"
 cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv get secret/ansible/snmp"
+note "Primary queued all WAL entries during disconnect — PR cluster caught up automatically on reconnect"
+
+press
+
+step "Summary — the propagation model:"
+printf "  ${BOLD}  Central Primary, push to local:${NC}\n"
+printf "      Primary  →  streams WAL entries  →  PR Cluster A\n"
+printf "      Primary  →  streams WAL entries  →  PR Cluster B\n"
+echo ""
+printf "  ${DIM}  Connected:${NC}   changes replicate within seconds of landing on Primary\n"
+printf "  ${DIM}  Disconnected:${NC} Primary queues WAL; PR cluster serves stale reads\n"
+printf "  ${DIM}  Reconnected:${NC}  Primary replays queued WAL; cluster catches up — no manual step\n"
+echo ""
 
 press
 

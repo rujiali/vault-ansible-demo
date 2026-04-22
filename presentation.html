@@ -456,7 +456,7 @@
       <div class="card">
         <div class="badge badge-orange">Section 3</div>
         <h3>Disaster Recovery</h3>
-        <p>Activating DR, promoting a DR instance to primary, and re-pointing local clusters to the new primary.</p>
+        <p>Activating DR, promoting a DR instance to primary, re-pointing local clusters to the new primary, and multi-site topology considerations.</p>
       </div>
       <div class="card">
         <div class="badge badge-purple">Section 4</div>
@@ -1133,6 +1133,70 @@
     <div class="notes"><p>The "not automatic" point is the most important takeaway for the Design Authority. They need to include PR re-pointing in the DR runbook and test it during DR drills. Clients often assume this is automatic.</p></div>
   </div>
 
+  <!-- ⑭b Multi-Site Topology — Primary Failure at Scale -->
+  <div class="slide slide-dark">
+    <div class="section-pill">Section 3 — Disaster Recovery</div>
+    <div class="eyebrow" data-anim="fade-up">Multi-Site Topology</div>
+    <h2 data-anim="fade-up" style="animation-delay:.06s">12-Site Deployment — What Happens When Primary Goes Down</h2>
+
+    <div class="grid-2" style="margin-top:10px">
+      <div>
+        <div style="padding:14px;background:var(--bg-mid);border:1px solid var(--border);border-radius:var(--r-card);margin-bottom:10px" data-anim="fade-in">
+          <div style="font-size:0.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:10px">Topology</div>
+          <div style="display:flex;flex-direction:column;gap:6px;font-size:0.82rem">
+            <div class="fbox hi" style="width:100%;text-align:left;padding:6px 10px">🏛️ Primary Cluster — central write endpoint</div>
+            <div style="display:flex;gap:6px;align-items:center;padding-left:12px">
+              <div style="color:var(--text-dimmer)">└──</div>
+              <div class="fbox rd" style="flex:1;text-align:left;padding:5px 10px">🔴 DR Cluster — passive standby</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;padding-left:12px">
+              <div style="color:var(--text-dimmer)">├──</div>
+              <div class="fbox gr" style="flex:1;text-align:left;padding:5px 10px">🟢 vault-pr-site1 — local reads, shared + site1 secrets</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;padding-left:12px">
+              <div style="color:var(--text-dimmer)">├──</div>
+              <div class="fbox gr" style="flex:1;text-align:left;padding:5px 10px">🟢 vault-pr-site2 — local reads, shared + site2 secrets</div>
+            </div>
+            <div style="text-align:center;color:var(--text-dimmer);font-size:0.78rem;padding:2px 0">⋮  ×12 sites  ⋮</div>
+          </div>
+        </div>
+        <div class="card card-accent" data-anim="fade-up">
+          <h3>Two Tiers of Secrets</h3>
+          <ul style="margin-top:6px;font-size:0.85rem">
+            <li><strong style="color:var(--accent)">Shared</strong> — written on primary, replicated read-only to all 12 PR clusters. One rotation propagates everywhere automatically.</li>
+            <li><strong style="color:var(--green)">Site-local</strong> — namespaced per site, written on primary, replicated only to that site's PR cluster.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="card card-red" data-anim="fade-up">
+          <h3 style="color:var(--red)">Primary Goes Down — Impact Across 12 Sites</h3>
+          <ul style="margin-top:6px;font-size:0.85rem">
+            <li><strong style="color:var(--green)">Reads:</strong> all 12 sites continue independently from local cache — no cross-site traffic needed</li>
+            <li><strong style="color:var(--red)">Writes:</strong> fail at all 12 sites — no primary to forward to</li>
+            <li><strong style="color:var(--red)">Rotation:</strong> scheduled rotation (Ansible, OS Engine, LDAP) fails — all writes go to primary</li>
+            <li><strong style="color:var(--yellow)">Break-glass reads:</strong> available from local cache — but post-use rotation fails until primary is restored</li>
+          </ul>
+        </div>
+        <div class="card card-orange" data-anim="fade-up">
+          <h3 style="color:var(--orange)">Recovery — Re-pointing 12 Clusters</h3>
+          <p style="font-size:0.85rem;margin-bottom:8px">After promoting DR to primary, each of the 12 PR clusters must be individually re-pointed. <strong style="color:var(--text-1)">This is not automatic.</strong></p>
+          <ul style="font-size:0.85rem">
+            <li>Re-point commands are identical across all clusters</li>
+            <li><strong style="color:var(--accent)">Recommendation:</strong> script the re-point operation and include it in the DR runbook as a single automated step</li>
+            <li>RTO for write recovery = DR promotion time + re-point time across all 12 sites</li>
+          </ul>
+        </div>
+        <div class="card card-purple" data-anim="fade-up">
+          <h3 style="color:var(--purple)">Design Recommendation</h3>
+          <p style="font-size:0.85rem">Test mass re-point automation in DR drills. A 12-cluster manual re-point during a real outage is an unacceptable operational risk without a rehearsed runbook.</p>
+        </div>
+      </div>
+    </div>
+    <div class="notes"><p>This slide directly addresses the 12-site topology question. Key messages: (1) reads are resilient — each site is self-sufficient; (2) writes and rotation stop everywhere when primary is down; (3) recovery requires re-pointing 12 clusters — this must be scripted and rehearsed, not done manually under pressure.</p></div>
+  </div>
+
   <!-- ⑮ Section 4 break -->
   <div class="slide slide-section">
     <div class="section-num" data-anim="fade-in">04</div>
@@ -1320,7 +1384,7 @@
   <!-- ⑳ Summary -->
   <div class="slide slide-cover">
     <div class="eyebrow" data-anim="fade-up">Summary</div>
-    <h1 data-anim="fade-up" style="animation-delay:.08s">Key Architecture Decisions</h1>
+    <h1 data-anim="fade-up" style="animation-delay:.08s">Summary</h1>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;max-width:860px" data-anim="stagger">
       <div class="card card-accent" style="text-align:left">
         <h3>Ansible + Vault</h3>

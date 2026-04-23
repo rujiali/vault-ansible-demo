@@ -183,6 +183,9 @@ echo "User 'sec-approver' created (password: approver123)"
 vault policy write pr-admin - <<'EOF'
 path "sys/generate-root/*" { capabilities = ["create","update","read","delete","sudo"] }
 path "sys/replication/*"   { capabilities = ["create","update","read","delete","sudo"] }
+path "local-secret/*"                    { capabilities = ["create","read","update","delete","list"] }
+path "sys/mounts/*"                      { capabilities = ["create","update","sudo"] }
+path "sys/internal/ui/mounts/local-secret/*" { capabilities = ["read"] }
 EOF
 vault write auth/userpass/users/pr-admin \
   password="pradmin123" \
@@ -191,18 +194,16 @@ echo "User 'pr-admin' created (for PR secondary root-token bootstrap)"
 
 echo ""
 echo "--- Wiring identity entities and security-team group ---"
-USERPASS_ACCESSOR=$(vault auth list -format=json | \
-  python3 -c "import sys,json; print(json.load(sys.stdin)['userpass/']['accessor'])")
+USERPASS_ACCESSOR=$(vault auth list -format=json 2>/dev/null | \
+  python3 -c "import sys,json; d=json.load(sys.stdin); print((d.get('userpass/') or {}).get('accessor',''))")
 
-# Create entities (idempotent — write returns existing id if name matches)
-OPERATOR_ID=$(vault write -format=json identity/entity \
-  name="operator" \
-  policies="breakglass-requestor" | \
+# Create entities (idempotent — on update vault returns data:null, so fall back to read-by-name)
+vault write identity/entity name="operator" policies="breakglass-requestor" >/dev/null 2>&1 || true
+OPERATOR_ID=$(vault read -format=json identity/entity/name/operator | \
   python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
 
-APPROVER_ID=$(vault write -format=json identity/entity \
-  name="sec-approver" \
-  policies="security-approver" | \
+vault write identity/entity name="sec-approver" policies="security-approver" >/dev/null 2>&1 || true
+APPROVER_ID=$(vault read -format=json identity/entity/name/sec-approver | \
   python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
 
 # Link userpass login names to entities
@@ -223,6 +224,19 @@ vault write identity/group \
   name="security-team" \
   member_entity_ids="$APPROVER_ID"
 echo "Group 'security-team' created with 'sec-approver' as member"
+
+# ── Local KV mount on vault-pr ────────────────────────────────
+echo ""
+echo "--- Enabling local KV mount on vault-pr ---"
+_pr_admin_token=$(VAULT_ADDR=$PR_ADDR vault login \
+  -method=userpass -format=json username=pr-admin password=pradmin123 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])")
+VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin_token \
+  vault secrets enable -local -path=local-secret kv-v2 2>/dev/null || \
+  echo "(local-secret already enabled)"
+VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_pr_admin_token \
+  vault write local-secret/data/demo message="PR-local data — not replicated"
+echo "Local KV mount 'local-secret' ready on vault-pr"
 
 echo ""
 echo "=== Setup complete — run ./demo.sh to start the demo ==="

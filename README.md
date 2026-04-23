@@ -6,11 +6,11 @@ A hands-on lab demonstrating Vault Enterprise credential automation and break-gl
 
 | Section | Topic |
 |---------|-------|
-| 1 | Ansible-based automation — SSH key rotation, SNMP rotation, RHEL break-glass (OS Engine), Windows break-glass (LDAP library checkout) |
-| 2 | Break-glass access workflow — Control Groups, dual approval, audit trail, post-use rotation |
-| 3 | Disaster Recovery — DR activation, PR cluster re-pointing |
-| 4 | Autonomous operation — behaviour during primary disconnect |
-| 5 | Operational best practices — unseal, backup, restore |
+| 1 | Ansible-based automation — SSH key rotation, SNMP rotation, RHEL break-glass (OS Engine), Windows break-glass (LDAP static role) |
+| 2 | Break-glass access workflow — Control Groups, dual approval, audit trail, post-use rotation *(optional, `--section 2`)* |
+| 3 | Disaster Recovery — DR promotion, primary restore |
+| 4 | Autonomous operation — network partition, reads during isolation, WAL resync on reconnect |
+| 5 | Operational best practices — Transit auto-unseal, backup, restore |
 
 ## Lab Topology
 
@@ -64,7 +64,7 @@ source .vault-creds
 ./ldap-setup.sh
 ```
 
-Seeds OpenLDAP with break-glass accounts and configures the Vault LDAP secrets engine library checkout.
+Seeds OpenLDAP with break-glass accounts and configures the Vault LDAP secrets engine with static roles.
 
 ### 5. Configure Vault
 
@@ -72,7 +72,7 @@ Seeds OpenLDAP with break-glass accounts and configures the Vault LDAP secrets e
 ./vault-setup.sh
 ```
 
-Enables secrets engines (KV v2, SSH, OS, LDAP), creates AppRole, userpass accounts, Control Group policies, and registers the RHEL host.
+Enables secrets engines (KV v2, SSH, OS, LDAP), creates userpass accounts, Control Group policies, and registers the RHEL host.
 
 ### 6. Run the demo
 
@@ -86,7 +86,7 @@ Enables secrets engines (KV v2, SSH, OS, LDAP), creates AppRole, userpass accoun
 |------|---------|
 | Start lab | `docker compose up -d` |
 | Stop lab | `docker compose down` |
-| Re-unseal after restart | `./bootstrap.sh` |
+| Restart lab (auto-unseals) | `docker compose down && docker compose up -d` |
 | Load credentials | `source lab/.vault-creds` |
 | Primary UI | http://localhost:8200 |
 | DR UI | http://localhost:8202 |

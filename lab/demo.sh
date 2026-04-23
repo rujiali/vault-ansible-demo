@@ -546,6 +546,32 @@ if [ -z "$PR_NATIVE_TOKEN" ]; then
   printf "  ${GRN}  vault-pr native token ready${NC}\n\n"
 fi
 
+# Get a pr-admin token for local-secret operations. PR_NATIVE_TOKEN (root via generate-root)
+# triggers a Vault Enterprise preflight bug on sys/internal/ui/mounts for local mounts;
+# pr-admin has explicit policy for local-secret/* and bypasses this issue.
+printf "  ${DIM}  Obtaining pr-admin token for local-secret operations...${NC}\n"
+_PR_LOCAL_TOKEN=$(VAULT_ADDR=$PR_ADDR vault login \
+  -method=userpass -format=json username=pr-admin password=pradmin123 2>/dev/null \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null || echo "")
+if [ -z "$_PR_LOCAL_TOKEN" ]; then
+  printf "  ${YLW}  Warning: could not get pr-admin token — local-secret steps may fail${NC}\n\n"
+fi
+
+# Ensure local-secret mount exists on vault-pr — it is local-only and may have been
+# wiped when PR replication was re-established in section 3.
+printf "  ${DIM}  Ensuring local-secret mount exists on vault-pr...${NC}\n"
+_ls_exists=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_PR_LOCAL_TOKEN \
+  vault secrets list -format=json 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print('yes' if 'local-secret/' in d else 'no')" 2>/dev/null || echo "no")
+if [ "$_ls_exists" = "no" ]; then
+  VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_PR_LOCAL_TOKEN \
+    vault secrets enable -local -path=local-secret kv-v2 >/dev/null 2>&1 && \
+    printf "  ${GRN}  local-secret mount created${NC}\n\n" || \
+    printf "  ${YLW}  Warning: could not create local-secret mount${NC}\n\n"
+else
+  printf "  ${GRN}  local-secret mount already exists${NC}\n\n"
+fi
+
 press
 
 # ── 4.0 Simulate Network Partition ───────────────────────────
@@ -572,9 +598,20 @@ press
 # ── 4.2 Writes During Partition ───────────────────────────────
 section "4.2  Write Behaviour During Partition"
 
-step "Attempt a write to PR cluster — fails, cannot forward to primary:"
+step "Attempt a write to PR cluster (replicated path) — fails, cannot forward to primary:"
 cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN vault kv put secret/ansible/snmp community_string=pr-write-during-partition 2>&1 || true"
-note "PR cluster never accepts writes locally — it always forwards to primary"
+note "Replicated paths always forward writes to primary — forwarding fails during partition"
+
+press
+
+step "Write to PR local mount — succeeds, local data is never forwarded to primary:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_PR_LOCAL_TOKEN vault kv put local-secret/demo message=written-during-partition"
+note "Local mounts are exclusive to this PR cluster — no replication, no forwarding needed"
+
+press
+
+step "Read local data back — confirms local writes are fully operational:"
+cmd "VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_PR_LOCAL_TOKEN vault kv get local-secret/demo"
 
 press
 
@@ -851,18 +888,19 @@ printf "  %-4s SNMP rotation       KV v2 + Ansible → new string deployed, vers
 printf "  %-4s RHEL break-glass    OS Engine → password rotated directly via SSH\n" "✓"
 printf "  %-4s Windows break-glass LDAP static role → password rotated on demand\n" "✓"
 echo ""
-printf "  ${BOLD}Section 2 — Disaster Recovery${NC}\n"
+printf "  ${BOLD}Section 3 — Disaster Recovery${NC}\n"
 printf "  %-4s Replication status  Primary DR + PR replication state verified\n" "✓"
 printf "  %-4s DR promotion        DR cluster promoted to primary via operation token\n" "✓"
 printf "  %-4s Primary restore     Original primary restarted, rejoins as DR secondary\n" "✓"
 echo ""
-printf "  ${BOLD}Section 3 — Autonomous Operation (Network Partition)${NC}\n"
-printf "  %-4s Reads continue      PR serves local data while partitioned from primary\n" "✓"
+printf "  ${BOLD}Section 4 — Autonomous Operation (Network Partition)${NC}\n"
+printf "  %-4s Reads continue      PR serves replicated data while partitioned from primary\n" "✓"
+printf "  %-4s Local writes work   PR local mount accepts writes independently — no forwarding\n" "✓"
+printf "  %-4s Replicated writes fail  Forwarding to primary times out — replicated paths read-only\n" "✓"
 printf "  %-4s Writes to primary   Primary stays up, accepts writes during partition\n" "✓"
-printf "  %-4s PR writes fail      Write forwarding fails — primary unreachable from PR\n" "✓"
 printf "  %-4s Auto resync         WAL replayed on reconnect — PR catches up automatically\n" "✓"
 echo ""
-printf "  ${BOLD}Section 4 — Operational Best Practices${NC}\n"
+printf "  ${BOLD}Section 5 — Operational Best Practices${NC}\n"
 printf "  %-4s Auto-unseal         Transit seal restart — no key-holder required\n" "✓"
 printf "  %-4s Backup              Raft snapshot saved\n" "✓"
 printf "  %-4s Restore             Snapshot restored, data verified intact\n" "✓"

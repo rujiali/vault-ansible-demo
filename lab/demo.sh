@@ -743,6 +743,41 @@ printf "  ${GRN}  Continues:${NC}  reads, token auth, local policy enforcement\n
 printf "  ${RED}  Stops:${NC}     writes, new dynamic creds, policy changes\n"
 echo ""
 
+# Generate PR_NATIVE_TOKEN if not already set (e.g. jumping directly to --section 4)
+if [ -z "$PR_NATIVE_TOKEN" ]; then
+  printf "  ${DIM}  Obtaining vault-pr native token...${NC}\n"
+  for _i in 1 2 3 4 5 6; do
+    _pr_sealed=$(VAULT_ADDR=$PR_ADDR vault status -format=json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
+    [ "$_pr_sealed" != "False" ] && VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
+    _adm=$(VAULT_ADDR=$PR_ADDR vault login \
+      -method=userpass -format=json username=pr-admin password=pradmin123 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin)['auth']['client_token'])" 2>/dev/null || echo "")
+    if [ -n "$_adm" ]; then
+      VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_adm vault delete sys/generate-root/attempt >/dev/null 2>&1 || true
+      _init=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_adm vault operator generate-root -init -format=json 2>/dev/null || echo "")
+      if [ -n "$_init" ]; then
+        _nonce=$(echo "$_init" | python3 -c "import sys,json; print(json.load(sys.stdin)['nonce'])")
+        _otp=$(echo "$_init"   | python3 -c "import sys,json; print(json.load(sys.stdin)['otp'])")
+        _enc=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_adm \
+          vault operator generate-root -nonce="$_nonce" -format=json "$PRIMARY_UNSEAL_KEY" 2>/dev/null \
+          | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('encoded_token') or d.get('encoded_root_token'))" 2>/dev/null || echo "")
+        [ -n "$_enc" ] && PR_NATIVE_TOKEN=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$_adm vault operator generate-root \
+          -decode="$_enc" -otp="$_otp" 2>/dev/null || echo "")
+      fi
+    fi
+    [ -n "$PR_NATIVE_TOKEN" ] && break
+    printf "  ${DIM}  vault-pr not ready, retrying in 10s (${_i}/6)...${NC}\n"
+    sleep 10
+  done
+  if [ -z "$PR_NATIVE_TOKEN" ]; then
+    printf "  ${RED}  ERROR:${NC} Could not generate vault-pr native token.\n"
+    printf "  ${YLW}  Run ./reset-demo.sh first.${NC}\n\n"
+    exit 1
+  fi
+  printf "  ${GRN}  vault-pr native token ready${NC}\n\n"
+fi
+
 press
 
 # ── 4.1 Read During Disconnect ────────────────────────────────
@@ -790,6 +825,22 @@ step "Restart vault-primary:"
 cmd "docker compose -f $(dirname $0)/docker-compose.yml start vault-primary"
 sleep 3
 cmd "VAULT_ADDR=$PRIMARY_ADDR vault operator unseal $PRIMARY_UNSEAL_KEY"
+
+# Wait for vault-pr write forwarding to re-establish.
+# vault-primary's cluster TLS cert is regenerated on restart — stream-wals
+# appears before write forwarding is fully ready, so we verify with an actual
+# write probe rather than just checking replication state.
+printf "  ${DIM}  Waiting for vault-pr write forwarding to re-establish...${NC}\n"
+for _i in $(seq 1 18); do
+  _write_test=$(VAULT_ADDR=$PR_ADDR VAULT_TOKEN=$PR_NATIVE_TOKEN \
+    vault kv put secret/ansible/snmp community_string=reconnect-probe 2>&1 || echo "FAILED")
+  if ! echo "$_write_test" | grep -q "FAILED\|Error\|error"; then
+    printf "  ${GRN}  vault-pr write forwarding ready${NC}\n\n"
+    break
+  fi
+  printf "  ${DIM}  write forwarding not ready yet, retrying in 5s (${_i}/18)...${NC}\n"
+  sleep 5
+done
 
 press
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bootstrap Vault lab: init, unseal, DR replication, PR replication
+# Bootstrap Vault lab: init, DR replication, PR replication
+# Uses PKCS11 auto-unseal (SoftHSM2) — no manual unseal required.
 set -euo pipefail
 
 PRIMARY="http://localhost:8200"
@@ -10,11 +11,11 @@ CREDS_FILE="$(dirname "$0")/.vault-creds"
 wait_for_vault() {
   local addr=$1
   local name=$2
-  local output
   echo -n "Waiting for $name..."
   for i in $(seq 1 30); do
-    output=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null) || true
-    if echo "$output" | grep -q '"initialized"'; then
+    local out
+    out=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null || true)
+    if echo "$out" | grep -q '"initialized"'; then
       echo " ready"
       return 0
     fi
@@ -25,7 +26,27 @@ wait_for_vault() {
   exit 1
 }
 
-init_and_unseal() {
+wait_for_unseal() {
+  local addr=$1
+  local name=$2
+  echo -n "Waiting for $name to auto-unseal..."
+  for i in $(seq 1 20); do
+    local sealed
+    local st
+    st=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null || true)
+    sealed=$(echo "$st" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
+    if [ "$sealed" = "False" ]; then
+      echo " unsealed"
+      return 0
+    fi
+    sleep 2
+    echo -n "."
+  done
+  echo " timeout — check PKCS11/SoftHSM2 setup"
+  exit 1
+}
+
+init_vault() {
   local addr=$1
   local name=$2
   local var_prefix=$3
@@ -36,55 +57,53 @@ init_and_unseal() {
   echo "=== $name ==="
   wait_for_vault "$addr" "$name"
 
-  local already_init status_out
-  status_out=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null) || true
-  already_init=$(echo "$status_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])")
+  local already_init
+  already_init=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['initialized'])" || echo "False")
 
-  local unseal_key root_token
+  local recovery_key root_token
 
   if [ "$already_init" = "True" ]; then
     if [ ! -f "$json_file" ]; then
-      echo "ERROR: $name already initialised but $json_file not found — wipe data/$(echo $name | tr '-' '/') and re-run"
+      echo "ERROR: $name already initialised but $json_file not found — wipe data/ and re-run"
       exit 1
     fi
     echo "$name already initialised — loading keys from $json_file"
-    unseal_key=$(python3 -c "import json; d=json.load(open('$json_file')); print(d['unseal_keys_b64'][0])")
+    recovery_key=$(python3 -c "import json; d=json.load(open('$json_file')); print(d['recovery_keys_b64'][0])")
     root_token=$(python3 -c "import json; d=json.load(open('$json_file')); print(d['root_token'])")
   else
     local init_out
-    init_out=$(VAULT_ADDR=$addr vault operator init -key-shares=1 -key-threshold=1 -format=json)
+    init_out=$(VAULT_ADDR=$addr vault operator init \
+      -recovery-shares=1 -recovery-threshold=1 -format=json)
     echo "$init_out" > "$json_file"
     chmod 600 "$json_file"
-    unseal_key=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
+    recovery_key=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['recovery_keys_b64'][0])")
     root_token=$(echo "$init_out" | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
     echo "  Init complete — keys saved to $json_file"
   fi
 
-  VAULT_ADDR=$addr vault operator unseal "$unseal_key"
-  echo "  Unseal key : $unseal_key"
-  echo "  Root token : $root_token"
+  wait_for_unseal "$addr" "$name"
 
-  # Write to creds file
+  echo "  Recovery key : $recovery_key"
+  echo "  Root token   : $root_token"
+
   echo "${var_prefix}_ADDR=$addr" >> "$CREDS_FILE"
-  echo "${var_prefix}_UNSEAL_KEY=$unseal_key" >> "$CREDS_FILE"
+  echo "${var_prefix}_RECOVERY_KEY=$recovery_key" >> "$CREDS_FILE"
   echo "${var_prefix}_TOKEN=$root_token" >> "$CREDS_FILE"
 }
 
 # ── Start ──────────────────────────────────────────────────────────────────
-echo "Vault Lab Bootstrap"
-echo "==================="
+echo "Vault Lab Bootstrap (Transit Auto-Unseal)"
+echo "========================================="
 
-# Only wipe creds if we are about to re-initialise — checked inside init_and_unseal
-# Always start fresh so partial runs don't leave stale entries
 rm -f "$CREDS_FILE"
 touch "$CREDS_FILE"
 chmod 600 "$CREDS_FILE"
 
-init_and_unseal "$PRIMARY" "vault-primary" "PRIMARY"
-init_and_unseal "$DR"      "vault-dr"      "DR"
-init_and_unseal "$PR"      "vault-pr"      "PR"
+init_vault "$PRIMARY" "vault-primary" "PRIMARY"
+init_vault "$DR"      "vault-dr"      "DR"
+init_vault "$PR"      "vault-pr"      "PR"
 
-# Load creds
 source "$CREDS_FILE"
 
 echo ""

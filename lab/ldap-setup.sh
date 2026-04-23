@@ -59,24 +59,25 @@ vault write ldap/config \
 
 echo "LDAP engine configured"
 
-# Create library set for break-glass accounts
-vault write ldap/library/breakglass-windows \
-  service_account_names="breakglass-win01,breakglass-win02" \
-  ttl=8h \
-  max_ttl=24h \
-  disable_check_in_enforcement=false
+# Create static roles for break-glass accounts
+vault write ldap/static-role/breakglass-windows-01 \
+  dn="cn=breakglass-win01,ou=BreakGlass,dc=corp,dc=example,dc=com" \
+  username="breakglass-win01" \
+  rotation_period=24h
 
-echo "Library set 'breakglass-windows' created"
+vault write ldap/static-role/breakglass-windows-02 \
+  dn="cn=breakglass-win02,ou=BreakGlass,dc=corp,dc=example,dc=com" \
+  username="breakglass-win02" \
+  rotation_period=24h
+
+echo "Static roles created"
 
 echo ""
 echo "=== Verify ==="
-vault read ldap/library/breakglass-windows/status
+vault read ldap/static-cred/breakglass-windows-01
 
 echo ""
 echo "=== LDAP Setup Complete ==="
 echo ""
-echo "Test checkout:"
-echo "  vault write -f ldap/library/breakglass-windows/check-out"
-echo ""
-echo "Test check-in:"
-echo "  vault write -f ldap/library/breakglass-windows/check-in service_account_names=breakglass-win01"
+echo "Read current password:  vault read ldap/static-cred/breakglass-windows-01"
+echo "Manual rotation:        vault write -f ldap/rotate-role/breakglass-windows-01"

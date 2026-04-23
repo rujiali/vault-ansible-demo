@@ -18,6 +18,18 @@ info() { printf "  ${DIM}…${NC}  %s\n" "$*"; }
 warn() { printf "  ${YLW}!${NC}  %s\n" "$*"; }
 fail() { printf "  ${RED}✗${NC}  %s\n" "$*"; }
 
+wait_for_unseal() {
+  local addr=$1 name=$2
+  for i in $(seq 1 20); do
+    local sealed
+    sealed=$(VAULT_ADDR=$addr vault status -format=json 2>/dev/null \
+      | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
+    [ "$sealed" = "False" ] && return 0
+    sleep 3
+  done
+  warn "$name did not auto-unseal after 60s — check SoftHSM2 volume"
+}
+
 echo ""
 printf "  ${BLD}Demo Reset — restoring pre-demo topology${NC}\n"
 echo ""
@@ -35,9 +47,8 @@ _st=$(VAULT_ADDR=$PRIMARY_ADDR vault status -format=json 2>/dev/null || true)
 PRIMARY_SEALED=$(echo "$_st" | python3 -c "import sys,json; print(json.load(sys.stdin).get('sealed',True))" 2>/dev/null || echo "True")
 
 if [ "$PRIMARY_SEALED" != "False" ]; then
-  info "Unsealing vault-primary..."
-  VAULT_ADDR=$PRIMARY_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-  sleep 3
+  info "Waiting for vault-primary to auto-unseal (PKCS11)..."
+  wait_for_unseal "$PRIMARY_ADDR" "vault-primary"
 fi
 
 _st=$(VAULT_ADDR=$PRIMARY_ADDR vault status -format=json 2>/dev/null || true)
@@ -59,8 +70,7 @@ if ! docker compose ps vault-dr 2>/dev/null | grep -q "running"; then
   sleep 5
 fi
 
-VAULT_ADDR=$DR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-sleep 2
+wait_for_unseal "$DR_ADDR" "vault-dr"
 ok "vault-dr is up"
 
 # ── Step 3: Ensure vault-pr is running and unsealed ───────────
@@ -72,8 +82,7 @@ if ! docker compose ps vault-pr 2>/dev/null | grep -q "running"; then
   sleep 5
 fi
 
-VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-sleep 2
+wait_for_unseal "$PR_ADDR" "vault-pr"
 ok "vault-pr is up"
 
 # ── Step 4: Restore DR replication (vault-dr as secondary) ────
@@ -102,8 +111,7 @@ else
     VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
       vault write -f sys/replication/performance/primary/disable >/dev/null 2>&1 || true
     sleep 4
-    VAULT_ADDR=$DR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-    sleep 2
+    wait_for_unseal "$DR_ADDR" "vault-dr"
   fi
 
   # Tear down any DR primary state on vault-dr
@@ -112,8 +120,7 @@ else
     VAULT_ADDR=$DR_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
       vault write -f sys/replication/dr/primary/disable >/dev/null 2>&1 || true
     sleep 3
-    VAULT_ADDR=$DR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-    sleep 2
+    wait_for_unseal "$DR_ADDR" "vault-dr"
   fi
 
   # Revoke vault-dr on primary (idempotent)
@@ -135,7 +142,7 @@ else
     token="$DR_WRAP" \
     primary_api_addr=http://vault-primary:8200 >/dev/null 2>&1 || true
   sleep 8
-  VAULT_ADDR=$DR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
+  wait_for_unseal "$DR_ADDR" "vault-dr"
   sleep 3
 
   # Verify
@@ -171,18 +178,18 @@ docker compose start vault-pr >/dev/null 2>&1
 sleep 5
 
 _pr_init_json=$(VAULT_ADDR=$PR_ADDR vault operator init \
-  -key-shares=1 -key-threshold=1 -format=json 2>/dev/null || echo "")
+  -recovery-shares=1 -recovery-threshold=1 -format=json 2>/dev/null || echo "")
 if [ -z "$_pr_init_json" ]; then
   warn "vault-pr init failed — skipping PR replication restore"
 else
-  _new_pr_unseal=$(echo "$_pr_init_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['unseal_keys_b64'][0])")
-  _new_pr_root=$(echo "$_pr_init_json"   | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
-  VAULT_ADDR=$PR_ADDR vault operator unseal "$_new_pr_unseal" >/dev/null
+  _new_pr_recovery=$(echo "$_pr_init_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['recovery_keys_b64'][0])")
+  _new_pr_root=$(echo "$_pr_init_json"     | python3 -c "import sys,json; print(json.load(sys.stdin)['root_token'])")
+  wait_for_unseal "$PR_ADDR" "vault-pr"
 
   # Save new vault-pr credentials
-  sed -i '' "s|^PR_UNSEAL_KEY=.*|PR_UNSEAL_KEY=$_new_pr_unseal|" .vault-creds
+  sed -i '' "s|^PR_RECOVERY_KEY=.*|PR_RECOVERY_KEY=$_new_pr_recovery|" .vault-creds
   sed -i '' "s|^PR_TOKEN=.*|PR_TOKEN=$_new_pr_root|" .vault-creds
-  PR_UNSEAL_KEY="$_new_pr_unseal"
+  PR_RECOVERY_KEY="$_new_pr_recovery"
   PR_TOKEN="$_new_pr_root"
 
   PR_WRAP=$(VAULT_ADDR=$PRIMARY_ADDR VAULT_TOKEN=$PRIMARY_TOKEN \
@@ -196,8 +203,8 @@ else
 
   info "Waiting 45s for full snapshot sync..."
   sleep 45
-  VAULT_ADDR=$PR_ADDR vault operator unseal "$PRIMARY_UNSEAL_KEY" >/dev/null 2>&1 || true
-  sleep 5
+  wait_for_unseal "$PR_ADDR" "vault-pr"
+  sleep 3
 
   PR_CONN2=$(VAULT_ADDR=$PR_ADDR vault read -format=json sys/replication/performance/status 2>/dev/null \
     | python3 -c "

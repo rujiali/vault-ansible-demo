@@ -1,9 +1,33 @@
 services:
+  vault-transit:
+    image: hashicorp/vault:latest
+    container_name: vault-transit
+    hostname: vault-transit
+    user: root
+    entrypoint: sh /vault/scripts/vault-transit-entrypoint.sh
+    ports:
+      - "8206:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+    volumes:
+      - ./data/transit:/vault/data
+      - ./config/vault-transit.hcl:/vault/config/vault-transit.hcl
+      - ./scripts/vault-transit-entrypoint.sh:/vault/scripts/vault-transit-entrypoint.sh
+    networks:
+      - vault-net
+    healthcheck:
+      test: ["CMD", "sh", "-c", "test -f /vault/data/.ready && vault status"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+      start_period: 10s
+
   vault-primary:
     image: hashicorp/vault-enterprise:2.0-ent
     container_name: vault-primary
     hostname: vault-primary
     user: root
+    entrypoint: sh /vault/scripts/vault-enterprise-entrypoint.sh
     ports:
       - "8200:8200"
     environment:
@@ -12,13 +36,17 @@ services:
     volumes:
       - ./config/vault-primary.hcl:/vault/config/vault.hcl
       - ./data/primary:/vault/data
+      - ./data/transit:/transit-data:ro
       - ./plugins:/vault/plugins
+      - ./scripts/vault-enterprise-entrypoint.sh:/vault/scripts/vault-enterprise-entrypoint.sh
     cap_add:
       - IPC_LOCK
-      - SETFCAP
-    command: vault server -config=/vault/config/vault.hcl
+      - NET_ADMIN
     networks:
       - vault-net
+    depends_on:
+      vault-transit:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
       interval: 5s
@@ -31,6 +59,7 @@ services:
     container_name: vault-dr
     hostname: vault-dr
     user: root
+    entrypoint: sh /vault/scripts/vault-enterprise-entrypoint.sh
     ports:
       - "8202:8200"
     environment:
@@ -39,18 +68,23 @@ services:
     volumes:
       - ./config/vault-dr.hcl:/vault/config/vault.hcl
       - ./data/dr:/vault/data
+      - ./data/transit:/transit-data:ro
       - ./plugins:/vault/plugins
+      - ./scripts/vault-enterprise-entrypoint.sh:/vault/scripts/vault-enterprise-entrypoint.sh
     cap_add:
       - IPC_LOCK
-    command: vault server -config=/vault/config/vault.hcl
     networks:
       - vault-net
+    depends_on:
+      vault-transit:
+        condition: service_healthy
 
   vault-pr:
     image: hashicorp/vault-enterprise:2.0-ent
     container_name: vault-pr
     hostname: vault-pr
     user: root
+    entrypoint: sh /vault/scripts/vault-enterprise-entrypoint.sh
     ports:
       - "8204:8200"
     environment:
@@ -59,12 +93,17 @@ services:
     volumes:
       - ./config/vault-pr.hcl:/vault/config/vault.hcl
       - ./data/pr:/vault/data
+      - ./data/transit:/transit-data:ro
       - ./plugins:/vault/plugins
+      - ./scripts/vault-enterprise-entrypoint.sh:/vault/scripts/vault-enterprise-entrypoint.sh
     cap_add:
       - IPC_LOCK
-    command: vault server -config=/vault/config/vault.hcl
+      - NET_ADMIN
     networks:
       - vault-net
+    depends_on:
+      vault-transit:
+        condition: service_healthy
 
   openldap:
     image: osixia/openldap:latest

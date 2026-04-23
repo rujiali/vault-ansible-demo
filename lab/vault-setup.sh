@@ -16,9 +16,14 @@ echo ""
 
 # ── Secret Engines ────────────────────────────────────────────
 echo "--- Enabling secret engines ---"
+vault secrets enable -version=2 -path=secret kv 2>/dev/null || echo "(kv already enabled)"
 vault secrets enable ssh 2>/dev/null || echo "(ssh already enabled)"
 vault plugin register -download -version="0.1.0+ent" secret vault-plugin-secrets-os 2>/dev/null || echo "(os plugin already registered)"
 vault secrets enable -path=os -plugin-version="0.1.0+ent" vault-plugin-secrets-os 2>/dev/null || echo "(os already enabled)"
+
+# ── Auth Methods ──────────────────────────────────────────────
+echo "--- Enabling auth methods ---"
+vault auth enable approle 2>/dev/null || echo "(approle already enabled)"
 
 # ── Ansible Policy ────────────────────────────────────────────
 echo "--- Creating Ansible policy ---"
@@ -97,12 +102,24 @@ echo "SSH OTP role 'otp-rhel' created"
 
 # ── OS Secrets Engine — RHEL host + accounts ──────────────────
 echo ""
+echo "--- Ensuring breakglass-rhel user exists on RHEL host ---"
+ssh -i "$RHEL_KEY" -o StrictHostKeyChecking=no "$RHEL_USER@$RHEL_IP" '
+  id breakglass-rhel >/dev/null 2>&1 || sudo useradd -m breakglass-rhel
+  echo "Breakglass123!" | sudo passwd --stdin breakglass-rhel 2>/dev/null || \
+    echo "Breakglass123!" | sudo chpasswd 2>/dev/null || true
+  sudo passwd -u breakglass-rhel 2>/dev/null || true
+'
+echo "breakglass-rhel user ready on RHEL"
+
+echo ""
 echo "--- Configuring OS secrets engine ---"
 vault write os/config ssh_host_key_trust_on_first_use=true
 vault write os/hosts/rhel-target \
   address=$RHEL_IP \
   port=22 \
   rotation_period=720h
+vault delete os/hosts/rhel-target/accounts/breakglass-rhel 2>/dev/null || true
+vault delete os/hosts/rhel-target/accounts/ansible 2>/dev/null || true
 vault write os/hosts/rhel-target/accounts/ansible \
   username=ansible \
   password="password"

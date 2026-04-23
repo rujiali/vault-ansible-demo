@@ -1,0 +1,6 @@
+FROM hashicorp/vault-enterprise:2.0-ent
+USER root
+RUN apk add --no-cache softhsm
+COPY scripts/vault-entrypoint.sh /usr/local/bin/vault-entrypoint.sh
+RUN chmod +x /usr/local/bin/vault-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/vault-entrypoint.sh"]

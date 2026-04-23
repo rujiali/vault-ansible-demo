@@ -508,7 +508,7 @@
       <!-- AAP integration note -->
       <div style="background:var(--accent-dim);border:1px solid var(--accent-bd);border-radius:var(--r-sm);padding:10px 16px;font-size:0.82rem;color:var(--text-2);display:flex;justify-content:space-between;align-items:center;gap:24px">
         <span>AAP authenticates to Vault via <strong style="color:var(--accent)">OIDC</strong> and fetches credentials at job runtime via the <strong style="color:var(--accent)">HashiCorp Vault Credential Plugin</strong> — playbooks never handle secrets directly.</span>
-        <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap">Lab uses AppRole</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap">Lab uses Ansible CLI</span>
       </div>
 
       <!-- Bottom: rotation model comparison -->
@@ -557,7 +557,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 10px;background:var(--bg-mid);border-radius:var(--r-sm)">
               <div>
                 <span style="color:var(--text-1)">Windows AD account passwords</span>
-                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Break-glass AD accounts — library checkout</span>
+                <span style="color:var(--text-muted);font-size:0.75rem;display:block">Break-glass AD accounts — static role rotation</span>
               </div>
               <span class="tag tag-win" style="font-size:0.72rem">AD Secrets Engine</span>
             </div>
@@ -732,20 +732,20 @@
           </div>
           <div class="step">
             <div class="step-num">2</div>
-            <div><strong>Break-glass account checked out from library</strong><p><code>POST /v1/ldap/library/&lt;set&gt;/check-out</code> — Vault issues a time-limited lease. Account locked to this checkout until check-in.</p></div>
+            <div><strong>Static role manages account with rotation_period</strong><p><code>vault read ldap/static-cred/&lt;name&gt;</code> — current password always available. Vault rotates on schedule automatically.</p></div>
           </div>
           <div class="step">
             <div class="step-num">3</div>
-            <div><strong>Scheduled rotation via ttl</strong><p>Vault rotates the AD account password on a configured schedule. No manual intervention required.</p></div>
+            <div><strong>Manual rotation on demand</strong><p><code>vault write -f ldap/rotate-role/&lt;name&gt;</code> — trigger immediate rotation after use. New password generated and stored in Vault.</p></div>
           </div>
           <div class="step">
             <div class="step-num gr">4</div>
-            <div><strong>Check-in triggers immediate rotation</strong><p><code>POST /v1/ldap/library/&lt;set&gt;/check-in</code> — password rotated immediately after session ends. Account available for next checkout.</p></div>
+            <div><strong>Old password invalidated immediately</strong><p>Vault connects to AD via LDAP and sets the new password. No WinRM, no AAP required.</p></div>
           </div>
         </div>
       </div>
     </div>
-    <div class="notes"><p>Both RHEL and Windows break-glass are now Vault-native. RHEL uses the OS Secrets Engine (connects via SSH). Windows uses the AD Secrets Engine (connects via LDAP). Neither requires AAP for rotation — Vault owns the full lifecycle for both. The library checkout pattern is ideal for break-glass: account is reserved for the duration of the session and auto-rotated on check-in.</p></div>
+    <div class="notes"><p>Both RHEL and Windows break-glass are Vault-native. RHEL uses the OS Secrets Engine (connects via SSH). Windows uses the LDAP Secrets Engine with static roles (connects via LDAP). Neither requires AAP for rotation. Static roles rotate on a schedule (rotation_period) and support on-demand rotation via rotate-role.</p></div>
   </div>
 
   <!-- ⑧ API Integration Points -->
@@ -780,14 +780,14 @@
         <td>Returns current password after rotation</td>
       </tr>
       <tr>
-        <td><span class="tag tag-win">WIN</span> Check out account</td>
-        <td><code>POST /v1/ldap/library/&lt;set&gt;/check-out</code></td>
-        <td><code>vault_write</code></td>
-        <td>Returns AD credential for break-glass session</td>
+        <td><span class="tag tag-win">WIN</span> Read credential</td>
+        <td><code>GET /v1/ldap/static-cred/&lt;name&gt;</code></td>
+        <td><code>vault_read</code></td>
+        <td>Returns current AD password from static role</td>
       </tr>
       <tr>
-        <td><span class="tag tag-win">WIN</span> Check in account</td>
-        <td><code>POST /v1/ldap/library/&lt;set&gt;/check-in</code></td>
+        <td><span class="tag tag-win">WIN</span> Rotate on demand</td>
+        <td><code>POST /v1/ldap/rotate-role/&lt;name&gt;</code></td>
         <td><code>vault_write</code></td>
         <td>Vault rotates AD password immediately via LDAP</td>
       </tr>
@@ -795,20 +795,10 @@
         <td>📡 SNMP read/write</td>
         <td><code>GET|POST /v1/kv/data/network/snmp/&lt;device&gt;</code></td>
         <td><code>vault_kv2_get/write</code></td>
-        <td>KV v2 retains version history</td>
-      </tr>
-      <tr>
-        <td>🔐 Auth (AppRole)</td>
-        <td><code>POST /v1/auth/approle/login</code></td>
-        <td><code>vault_login</code></td>
-        <td>Ansible authenticates as AppRole — no static token</td>
+        <td>KV v2 retains full version history</td>
       </tr>
     </table>
-
-    <div style="margin-top:14px;padding:10px 14px;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--accent-dim);font-size:0.8rem;color:var(--accent)" data-anim="fade-up" style="animation-delay:.3s">
-      All Ansible → Vault calls use AppRole authentication. The Role ID is stored in the playbook; the Secret ID is injected at runtime from a secure store — no static tokens in source control.
-    </div>
-    <div class="notes"><p>AppRole is the right auth method for machine-to-machine (Ansible → Vault). Response-wrapping the Secret ID at delivery time gives you a one-time-use token that limits exposure if intercepted.</p></div>
+    <div class="notes"><p>Windows break-glass uses LDAP static roles — Vault owns the password and rotates it on schedule or on demand. No WinRM, no AAP required. RHEL break-glass uses the OS Secrets Engine via SSH.</p></div>
   </div>
 
   <!-- ⑨ Section 2 break -->
@@ -922,15 +912,15 @@
         <div class="step-list">
           <div class="step">
             <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">1</div>
-            <div><strong>Session ends</strong><p>Requestor checks the AD account back in via Vault.</p></div>
+            <div><strong>Session ends</strong><p>Operator triggers manual rotation after break-glass use.</p></div>
           </div>
           <div class="step">
             <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">2</div>
-            <div><strong>Vault rotates the AD account password directly</strong><p><code>vault write -f ldap/library/&lt;set&gt;/check-in</code> — Vault connects to AD via LDAP and rotates the password. No AAP, no WinRM.</p></div>
+            <div><strong>Vault rotates the AD account password directly</strong><p><code>vault write -f ldap/rotate-role/&lt;name&gt;</code> — Vault connects to AD via LDAP and sets a new random password. No AAP, no WinRM.</p></div>
           </div>
           <div class="step">
             <div class="step-num" style="background:var(--green-dim);color:var(--green);border-color:var(--green)">3</div>
-            <div><strong>Old password invalidated immediately</strong><p>AD enforces the new password. Account available for next break-glass checkout.</p></div>
+            <div><strong>Old password invalidated immediately</strong><p>AD enforces the new password. Account available for next break-glass use.</p></div>
           </div>
         </div>
         <div style="margin-top:10px;padding:8px 12px;background:var(--green-dim);border:1px solid var(--green);border-radius:var(--r-sm);font-size:0.8rem;color:var(--green)">
@@ -939,7 +929,7 @@
       </div>
 
     </div>
-    <div class="notes"><p>Both RHEL and Windows break-glass are now Vault-native. RHEL: OS Secrets Engine rotates via SSH. Windows: AD Secrets Engine rotates via LDAP. Neither requires AAP. The library checkout model is the right pattern for break-glass — account is reserved for the session and auto-rotated on check-in, closing the audit trail cleanly.</p></div>
+    <div class="notes"><p>Both RHEL and Windows break-glass are Vault-native. RHEL: OS Secrets Engine rotates via SSH. Windows: LDAP Secrets Engine with static roles rotates via LDAP. Neither requires AAP. Rotation is triggered on demand after each break-glass session.</p></div>
   </div>
 
   <!-- ⑫ Vault Unavailable -->
@@ -1306,6 +1296,10 @@
             <li>WAL queue growing on primary during extended outage</li>
           </ul>
           <p style="font-size:0.85rem;margin-top:8px;color:var(--green)">On reconnect, the PR cluster fully resyncs — no manual merge required.</p>
+          <div style="margin-top:10px;padding:8px 12px;background:var(--bg-mid);border-radius:var(--r-sm);font-size:0.8rem;color:var(--text-2)">
+            <strong style="color:var(--text-1)">Version behaviour during partition:</strong><br>
+            PR reads v16 (stale) · Primary write → v17 (queued) · Reconnect: WAL replays → PR catches up to v17 · Next write → v18
+          </div>
         </div>
       </div>
     </div>
@@ -1334,7 +1328,7 @@
         <div class="step-list" data-anim="stagger">
           <div class="step">
             <div class="step-num">1</div>
-            <div><strong>Auto-Unseal (recommended)</strong><p>Vault configured with HSM / cloud KMS Transit Seal. On restart, Vault automatically unseals by calling the seal provider. No human intervention required.</p></div>
+            <div><strong>Auto-Unseal (recommended)</strong><p>Vault configured with Transit Seal (HSM or cloud KMS in production). On restart, Vault automatically unseals by calling the seal provider. No human intervention required.</p></div>
           </div>
           <div class="step">
             <div class="step-num">2</div>
@@ -1384,7 +1378,7 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:16px;max-width:860px" data-anim="stagger">
       <div class="card card-accent" style="text-align:left">
         <h3>Ansible + Vault</h3>
-        <p style="font-size:0.85rem">Vault is source of truth. Ansible is executor. AppRole auth — no static tokens in playbooks.</p>
+        <p style="font-size:0.85rem">Vault is source of truth. Ansible is executor. SSH keys and SNMP are Ansible-orchestrated; RHEL and Windows break-glass are Vault-native.</p>
       </div>
       <div class="card card-green" style="text-align:left">
         <h3 style="color:var(--green)">Break-Glass</h3>
@@ -1392,7 +1386,7 @@
       </div>
       <div class="card card-orange" style="text-align:left">
         <h3 style="color:var(--orange)">DR</h3>
-        <p style="font-size:0.85rem">Promotion is manual — prevents split-brain. PR cluster re-pointing is not automatic. Include both in DR runbook and test regularly.</p>
+        <p style="font-size:0.85rem">Promotion is manual — prevents split-brain. In production, PR clusters point to a load balancer VIP — failover is transparent. Include in DR runbook and test regularly.</p>
       </div>
       <div class="card card-purple" style="text-align:left">
         <h3 style="color:var(--purple)">Local Clusters</h3>
@@ -1400,7 +1394,7 @@
       </div>
       <div class="card" style="text-align:left;grid-column:1/-1;border-color:var(--yellow);background:rgba(251,191,36,0.06)">
         <h3 style="color:var(--yellow)">Operational Best Practices</h3>
-        <p style="font-size:0.85rem">Auto-unseal via HSM or cloud KMS for production — manual Shamir unseal is operationally fragile at scale. Schedule encrypted Raft snapshots regularly and test restores. Vault backup is a prerequisite for break-glass resilience.</p>
+        <p style="font-size:0.85rem">Auto-unseal via Transit Seal (HSM or cloud KMS in production) — manual Shamir unseal is operationally fragile at scale. Schedule encrypted Raft snapshots regularly and test restores. Snapshot alone is not enough — seal key must travel with the backup.</p>
       </div>
     </div>
     <div class="notes"><p>Closing slide. Leave on screen for Q&A. Each card maps to one section — easy for the audience to recall the key takeaway from each area.</p></div>
